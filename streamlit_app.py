@@ -16,6 +16,7 @@ from PIL import Image, ImageDraw
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(APP_DIR, "architecte.db")
 LOGO_PATH = os.path.join(APP_DIR, "app_mhd_complet", "mourad.png")
+HERO_IMAGE_PATH = os.path.join(APP_DIR, "app_mhd_complet", "villa_moderne.png")
 BRAND_NAVY = (5, 31, 48)
 BRAND_TEAL = (19, 145, 134)
 BRAND_GOLD = (212, 168, 89)
@@ -457,17 +458,17 @@ st.markdown(
     .mhd-hero {
         position: relative;
         overflow: hidden;
-        min-height: 270px;
+        min-height: 340px;
         border-radius: 8px;
-        margin-bottom: 24px;
-        background: #fdfefe;
-        border: 1px solid rgba(5,31,48,.08);
-        box-shadow: 0 22px 54px rgba(5,31,48,.13);
+        margin-bottom: 28px;
+        background: #051f30;
+        border: 1px solid rgba(255,255,255,.12);
+        box-shadow: 0 30px 80px rgba(0,0,0,.34);
     }
     .mhd-hero-top {
         position: relative;
-        min-height: 176px;
-        background: linear-gradient(118deg, #061b2a 0%, #092d43 44%, #ffffff 44.2%, #ffffff 47%, #139186 47.2%, #139186 49%, transparent 49.2%);
+        min-height: 218px;
+        background: linear-gradient(118deg, rgba(6,27,42,.98) 0%, rgba(9,45,67,.96) 43%, #ffffff 43.2%, #ffffff 45.7%, #139186 46%, #139186 48%, transparent 48.2%);
     }
     .mhd-hero-brand {
         position: absolute;
@@ -515,10 +516,12 @@ st.markdown(
         right: 0;
         top: 0;
         width: 54%;
-        height: 210px;
+        height: 252px;
         background:
-            linear-gradient(180deg, rgba(197,208,217,.75), rgba(255,255,255,.15)),
-            linear-gradient(135deg, #cfd8dd 0%, #f6f7f6 42%, #87959c 100%);
+            linear-gradient(90deg, rgba(5,31,48,.12), rgba(5,31,48,0)),
+            var(--hero-photo, linear-gradient(135deg, #cfd8dd 0%, #f6f7f6 42%, #87959c 100%));
+        background-size: cover;
+        background-position: center;
         clip-path: polygon(17% 0, 100% 0, 100% 100%, 0 100%);
     }
     .mhd-villa {
@@ -558,9 +561,9 @@ st.markdown(
     .mhd-window.two { left: 142px; top: 54px; width: 78px; height: 54px; }
     .mhd-window.three { right: 22px; top: 18px; width: 96px; height: 45px; }
     .mhd-hero-title {
-        padding: 26px 34px 28px;
-        background: #ffffff;
-        clip-path: polygon(0 0, 48% 0, 59% 100%, 0 100%);
+        padding: 34px 38px 36px;
+        background: linear-gradient(105deg, #ffffff 0%, #ffffff 52%, rgba(255,255,255,.82) 52.3%, rgba(255,255,255,0) 70%);
+        clip-path: polygon(0 0, 52% 0, 64% 100%, 0 100%);
     }
     .mhd-hero-title h1 {
         margin: 0;
@@ -731,6 +734,67 @@ st.markdown(
         .report-kpi-main {
             grid-row: auto;
         }
+    }
+    [data-testid="stAppViewContainer"] {
+        background:
+            linear-gradient(180deg, rgba(5,31,48,.93), rgba(8,46,59,.88) 34%, rgba(244,247,248,.96) 34.2%, #f7faf9 100%),
+            radial-gradient(circle at 84% 12%, rgba(212,168,89,.22), transparent 23rem),
+            radial-gradient(circle at 6% 18%, rgba(19,145,134,.24), transparent 21rem) !important;
+    }
+    [data-testid="stHeader"] {
+        background: transparent !important;
+    }
+    [data-testid="stToolbar"] {
+        right: 1rem;
+    }
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #061b2a, #082f3a) !important;
+        border-right: 1px solid rgba(255,255,255,.12);
+    }
+    [data-testid="stSidebar"] * {
+        color: rgba(255,255,255,.92);
+    }
+    [data-testid="stSidebar"] [role="radiogroup"] label {
+        background: rgba(255,255,255,.08);
+        border-radius: 8px;
+        padding: 8px 10px;
+        margin-bottom: 6px;
+    }
+    .main .block-container {
+        padding-top: 2.2rem;
+    }
+    .card,
+    div[data-testid="stExpander"],
+    div[data-testid="stForm"] {
+        background: rgba(255,255,255,.92) !important;
+        border: 1px solid rgba(255,255,255,.72) !important;
+        box-shadow: 0 22px 52px rgba(5,31,48,.13) !important;
+        backdrop-filter: blur(14px);
+    }
+    h1, h2, h3 {
+        letter-spacing: 0;
+    }
+    .stTextInput input,
+    .stNumberInput input,
+    .stDateInput input,
+    textarea {
+        border-radius: 8px !important;
+        border: 1px solid rgba(5,31,48,.14) !important;
+        background: rgba(255,255,255,.96) !important;
+        box-shadow: 0 8px 22px rgba(5,31,48,.06);
+    }
+    .stButton > button,
+    .stDownloadButton > button {
+        border-radius: 8px !important;
+        border: 1px solid rgba(255,255,255,.14) !important;
+        background: linear-gradient(135deg, #051f30, #139186) !important;
+        box-shadow: 0 14px 30px rgba(5,31,48,.20);
+        font-weight: 800;
+    }
+    .stButton > button:hover,
+    .stDownloadButton > button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 18px 36px rgba(5,31,48,.24);
     }
     </style>
     """,
@@ -1373,7 +1437,9 @@ def image_data_uri(path):
 
 def render_app_header(title, subtitle, mode_label):
     logo_src = image_data_uri(LOGO_PATH)
+    hero_src = image_data_uri(HERO_IMAGE_PATH)
     logo_html = f"<img class='mhd-hero-logo' src='{logo_src}' alt='MHD'>" if logo_src else ""
+    hero_style = f" style=\"--hero-photo: url('{hero_src}')\"" if hero_src else ""
     st.markdown(
         f"""
         <section class="mhd-hero">
@@ -1388,7 +1454,7 @@ def render_app_header(title, subtitle, mode_label):
                         </div>
                     </div>
                 </div>
-                <div class="mhd-villa-scene" aria-hidden="true">
+                <div class="mhd-villa-scene" aria-hidden="true"{hero_style}>
                     <div class="mhd-villa">
                         <span class="mhd-window one"></span>
                         <span class="mhd-window two"></span>
