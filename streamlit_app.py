@@ -741,6 +741,49 @@ st.markdown(
             radial-gradient(circle at 84% 12%, rgba(212,168,89,.22), transparent 23rem),
             radial-gradient(circle at 6% 18%, rgba(19,145,134,.24), transparent 21rem) !important;
     }
+    html,
+    body,
+    .stApp,
+    .main,
+    section.main,
+    [data-testid="stApp"],
+    [data-testid="stDecoration"],
+    [data-testid="stAppViewContainer"],
+    [data-testid="stMain"],
+    [data-testid="stMainBlockContainer"] {
+        background-color: #051f30 !important;
+    }
+    .stApp,
+    .main,
+    section.main,
+    [data-testid="stApp"],
+    [data-testid="stAppViewContainer"],
+    [data-testid="stMain"] {
+        background-image:
+            linear-gradient(180deg, rgba(5,31,48,.98) 0%, rgba(5,31,48,.94) 260px, rgba(244,247,248,.98) 261px, #f7faf9 100%),
+            radial-gradient(circle at 85px 90px, rgba(19,145,134,.34), transparent 280px),
+            radial-gradient(circle at 88% 120px, rgba(212,168,89,.28), transparent 340px) !important;
+        background-attachment: fixed !important;
+    }
+    [data-testid="stMainBlockContainer"],
+    .block-container {
+        background: transparent !important;
+    }
+    .mhd-version-badge {
+        position: fixed;
+        right: 14px;
+        bottom: 12px;
+        z-index: 9999;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: rgba(5,31,48,.88);
+        color: #ffffff;
+        border: 1px solid rgba(255,255,255,.18);
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: .04em;
+        box-shadow: 0 10px 26px rgba(0,0,0,.22);
+    }
     [data-testid="stHeader"] {
         background: transparent !important;
     }
@@ -795,6 +838,169 @@ st.markdown(
     .stDownloadButton > button:hover {
         transform: translateY(-1px);
         box-shadow: 0 18px 36px rgba(5,31,48,.24);
+    }
+    .mhd-hero {
+        min-height: 380px;
+        margin-bottom: 34px;
+        background: #f4f7f8 !important;
+        border: 1px solid rgba(255,255,255,.70);
+    }
+    .mhd-hero-photo {
+        position: absolute !important;
+        inset: 0 !important;
+        width: 100% !important;
+        height: 100% !important;
+        max-width: none !important;
+        min-width: 100% !important;
+        min-height: 100% !important;
+        object-fit: cover !important;
+        object-position: center center !important;
+        z-index: 0 !important;
+    }
+    .mhd-hero::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        background: linear-gradient(90deg, rgba(255,255,255,.94) 0%, rgba(255,255,255,.80) 31%, rgba(255,255,255,.12) 52%, rgba(5,31,48,.05) 100%);
+        pointer-events: none;
+    }
+    .mhd-hero-top {
+        min-height: 190px;
+        background: transparent !important;
+        position: relative;
+        z-index: 2;
+    }
+    .mhd-hero-brand {
+        top: 46px;
+        left: 46px;
+        width: 34%;
+        color: #101d29;
+    }
+    .mhd-hero-logo {
+        display: none;
+    }
+    .mhd-brand-name {
+        color: #2f2619;
+        font-size: clamp(2.6rem, 5vw, 4.6rem);
+        font-weight: 300;
+    }
+    .mhd-brand-subtitle {
+        color: #101d29;
+        font-weight: 900;
+        letter-spacing: .34em;
+    }
+    .mhd-brand-person {
+        color: #101d29;
+        font-size: .82rem;
+        letter-spacing: .42em;
+        opacity: .72;
+    }
+    .mhd-villa-scene,
+    .mhd-villa,
+    .mhd-window {
+        display: none !important;
+    }
+    .mhd-hero-title {
+        position: absolute;
+        left: 0;
+        bottom: 0;
+        z-index: 2;
+        width: min(620px, 58%);
+        padding: 28px 42px 34px;
+        background: linear-gradient(100deg, rgba(255,255,255,.96) 0%, rgba(255,255,255,.90) 78%, rgba(255,255,255,0) 100%) !important;
+        clip-path: none !important;
+    }
+    .mhd-hero-title h1 {
+        font-size: clamp(2rem, 4vw, 3.25rem);
+    }
+    .mhd-hero-title strong {
+        font-size: clamp(1.15rem, 2.4vw, 1.8rem);
+    }
+    .mhd-mode-badge {
+        background: rgba(19,145,134,.14);
+    }
+    @media (max-width: 760px) {
+        [data-testid="stAppViewContainer"],
+        .stApp,
+        .main,
+        section.main,
+        [data-testid="stMain"] {
+            background-image:
+                linear-gradient(180deg, rgba(5,31,48,.98) 0%, rgba(5,31,48,.92) 210px, rgba(244,247,248,.98) 211px, #f7faf9 100%) !important;
+        }
+        .main .block-container,
+        .block-container,
+        [data-testid="stMainBlockContainer"] {
+            padding-left: 0.8rem !important;
+            padding-right: 0.8rem !important;
+            padding-top: 1rem !important;
+        }
+        .mhd-hero {
+            min-height: 330px !important;
+            margin-bottom: 22px !important;
+            border-radius: 8px;
+        }
+        .mhd-hero-photo {
+            object-position: 62% center !important;
+        }
+        .mhd-hero::after {
+            background: linear-gradient(180deg, rgba(255,255,255,.84) 0%, rgba(255,255,255,.50) 34%, rgba(5,31,48,.08) 58%, rgba(5,31,48,.18) 100%);
+        }
+        .mhd-hero-top {
+            min-height: 150px !important;
+        }
+        .mhd-hero-brand {
+            top: 24px !important;
+            left: 22px !important;
+            width: 78% !important;
+        }
+        .mhd-brand-name {
+            font-size: 2.45rem !important;
+        }
+        .mhd-brand-subtitle {
+            font-size: .78rem;
+            letter-spacing: .22em;
+        }
+        .mhd-brand-person {
+            font-size: .68rem;
+            letter-spacing: .26em;
+        }
+        .mhd-hero-title {
+            width: 100% !important;
+            padding: 18px 20px 22px !important;
+            background: linear-gradient(180deg, rgba(255,255,255,.92), rgba(255,255,255,.98)) !important;
+        }
+        .mhd-hero-title h1 {
+            font-size: 1.85rem !important;
+            line-height: 1.05;
+        }
+        .mhd-hero-title strong {
+            font-size: 1.05rem !important;
+            margin-top: 8px;
+        }
+        .mhd-gold-line {
+            width: 92px;
+            margin-top: 12px;
+        }
+        .card {
+            padding: 16px !important;
+        }
+        .stTextInput input,
+        .stNumberInput input,
+        .stDateInput input,
+        textarea {
+            min-height: 44px;
+            font-size: 16px !important;
+        }
+        .tracking-header,
+        .tracking-row {
+            min-width: 980px;
+        }
+        .finance-summary-panel,
+        .finance-summary-line {
+            grid-template-columns: 1fr !important;
+        }
     }
     </style>
     """,
@@ -1439,10 +1645,12 @@ def render_app_header(title, subtitle, mode_label):
     logo_src = image_data_uri(LOGO_PATH)
     hero_src = image_data_uri(HERO_IMAGE_PATH)
     logo_html = f"<img class='mhd-hero-logo' src='{logo_src}' alt='MHD'>" if logo_src else ""
-    hero_style = f" style=\"--hero-photo: url('{hero_src}')\"" if hero_src else ""
+    hero_img_html = f"<img class='mhd-hero-photo' src='{hero_src}' alt='Création architecturale moderne'>" if hero_src else ""
     st.markdown(
         f"""
+        <div class="mhd-version-badge">MHD DESIGN 2026</div>
         <section class="mhd-hero">
+            {hero_img_html}
             <div class="mhd-hero-top">
                 <div class="mhd-hero-brand">
                     <div class="mhd-hero-brand-row">
@@ -1454,7 +1662,7 @@ def render_app_header(title, subtitle, mode_label):
                         </div>
                     </div>
                 </div>
-                <div class="mhd-villa-scene" aria-hidden="true"{hero_style}>
+                <div class="mhd-villa-scene" aria-hidden="true">
                     <div class="mhd-villa">
                         <span class="mhd-window one"></span>
                         <span class="mhd-window two"></span>
