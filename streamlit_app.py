@@ -440,6 +440,298 @@ st.markdown(
             min-width: 980px;
         }
     }
+    .stApp {
+        background:
+            radial-gradient(circle at top left, rgba(19,145,134,.10), transparent 28rem),
+            linear-gradient(180deg, #f6f8f8 0%, #ffffff 42%, #f4f7f7 100%);
+    }
+    .block-container {
+        padding-top: 1.6rem;
+        max-width: 1220px;
+    }
+    .card {
+        border: 1px solid rgba(5,31,48,.08);
+        border-radius: 8px;
+        box-shadow: 0 18px 48px rgba(5,31,48,.08);
+    }
+    .mhd-hero {
+        position: relative;
+        overflow: hidden;
+        min-height: 270px;
+        border-radius: 8px;
+        margin-bottom: 24px;
+        background: #fdfefe;
+        border: 1px solid rgba(5,31,48,.08);
+        box-shadow: 0 22px 54px rgba(5,31,48,.13);
+    }
+    .mhd-hero-top {
+        position: relative;
+        min-height: 176px;
+        background: linear-gradient(118deg, #061b2a 0%, #092d43 44%, #ffffff 44.2%, #ffffff 47%, #139186 47.2%, #139186 49%, transparent 49.2%);
+    }
+    .mhd-hero-brand {
+        position: absolute;
+        left: 34px;
+        top: 26px;
+        width: 42%;
+        color: #ffffff;
+        z-index: 2;
+    }
+    .mhd-hero-brand-row {
+        display: flex;
+        align-items: center;
+        gap: 18px;
+    }
+    .mhd-hero-logo {
+        max-width: 104px;
+        max-height: 104px;
+        object-fit: contain;
+        filter: drop-shadow(0 12px 28px rgba(0,0,0,.24));
+    }
+    .mhd-brand-name {
+        color: #d4a859;
+        font-size: clamp(2.2rem, 5vw, 4.2rem);
+        line-height: .9;
+        font-weight: 300;
+        letter-spacing: 0;
+    }
+    .mhd-brand-subtitle {
+        margin-top: 8px;
+        color: rgba(255,255,255,.94);
+        font-size: .95rem;
+        text-transform: uppercase;
+        letter-spacing: .08em;
+    }
+    .mhd-brand-person {
+        margin-top: 8px;
+        color: #ffffff;
+        font-size: 1.05rem;
+        text-transform: uppercase;
+        letter-spacing: .10em;
+        font-weight: 700;
+    }
+    .mhd-villa-scene {
+        position: absolute;
+        right: 0;
+        top: 0;
+        width: 54%;
+        height: 210px;
+        background:
+            linear-gradient(180deg, rgba(197,208,217,.75), rgba(255,255,255,.15)),
+            linear-gradient(135deg, #cfd8dd 0%, #f6f7f6 42%, #87959c 100%);
+        clip-path: polygon(17% 0, 100% 0, 100% 100%, 0 100%);
+    }
+    .mhd-villa {
+        position: absolute;
+        right: 44px;
+        top: 38px;
+        width: min(390px, 72%);
+        height: 132px;
+    }
+    .mhd-villa::before,
+    .mhd-villa::after {
+        content: "";
+        position: absolute;
+        background: #eef1f2;
+        box-shadow: 0 18px 40px rgba(5,31,48,.25);
+    }
+    .mhd-villa::before {
+        width: 100%;
+        height: 86px;
+        left: 0;
+        top: 34px;
+    }
+    .mhd-villa::after {
+        width: 64%;
+        height: 56px;
+        right: 0;
+        top: 0;
+    }
+    .mhd-window {
+        position: absolute;
+        z-index: 2;
+        background: linear-gradient(180deg, #1b2a31, #07131a);
+        border: 4px solid #d8dddf;
+        box-shadow: inset 0 0 28px rgba(212,168,89,.28);
+    }
+    .mhd-window.one { left: 18px; top: 54px; width: 108px; height: 54px; }
+    .mhd-window.two { left: 142px; top: 54px; width: 78px; height: 54px; }
+    .mhd-window.three { right: 22px; top: 18px; width: 96px; height: 45px; }
+    .mhd-hero-title {
+        padding: 26px 34px 28px;
+        background: #ffffff;
+        clip-path: polygon(0 0, 48% 0, 59% 100%, 0 100%);
+    }
+    .mhd-hero-title h1 {
+        margin: 0;
+        color: #061b2a;
+        font-size: clamp(2rem, 4.8vw, 3.55rem);
+        line-height: .98;
+        font-weight: 900;
+        text-transform: uppercase;
+    }
+    .mhd-hero-title strong {
+        display: block;
+        margin-top: 12px;
+        color: #139186;
+        font-size: clamp(1.25rem, 3.1vw, 2.15rem);
+        line-height: 1;
+        font-weight: 900;
+        text-transform: uppercase;
+    }
+    .mhd-gold-line {
+        width: 150px;
+        height: 4px;
+        background: #d4a859;
+        margin-top: 18px;
+    }
+    .mhd-mode-badge {
+        display: inline-flex;
+        align-items: center;
+        margin-bottom: 12px;
+        padding: 6px 12px;
+        border-radius: 999px;
+        background: rgba(19,145,134,.12);
+        color: #08716a;
+        font-size: .78rem;
+        font-weight: 900;
+        text-transform: uppercase;
+        letter-spacing: .08em;
+    }
+    .app-logo-header {
+        display: none;
+    }
+    .client-hero {
+        display: none;
+    }
+    .design-kpi {
+        min-height: 104px;
+        padding: 18px 20px;
+        background: rgba(255,255,255,.92);
+        border: 1px solid rgba(5,31,48,.08);
+        box-shadow: 0 14px 34px rgba(5,31,48,.08);
+    }
+    .design-kpi small {
+        color: #101d29;
+        font-size: .78rem;
+    }
+    .design-kpi strong {
+        color: #0b756f;
+        font-size: clamp(1.3rem, 2vw, 1.8rem);
+    }
+    .tracking-report {
+        border-radius: 8px;
+        border: 1px solid rgba(5,31,48,.10);
+        box-shadow: 0 22px 55px rgba(5,31,48,.10);
+    }
+    .tracking-header {
+        background: linear-gradient(180deg, #073a3d, #05282d);
+        font-size: .82rem;
+    }
+    .tracking-header .tracking-cell {
+        color: #ffffff;
+    }
+    .tracking-cell {
+        border-right: 1px solid rgba(5,31,48,.10);
+        min-height: 104px;
+    }
+    .tracking-row {
+        background: #ffffff;
+    }
+    .tracking-row:hover {
+        background: #fbfdfd;
+    }
+    .tracking-lot {
+        font-size: 1.38rem;
+        text-shadow: 0 2px 12px rgba(0,0,0,.18);
+    }
+    .tracking-designation strong {
+        font-size: 1.05rem;
+    }
+    .tracking-total {
+        font-size: 1.02rem;
+    }
+    .tracking-ring {
+        width: 88px;
+        height: 88px;
+        box-shadow: inset 0 0 0 8px rgba(255,255,255,.70), 0 8px 24px rgba(5,31,48,.08);
+    }
+    .tracking-photo,
+    .tracking-placeholder {
+        width: 128px;
+        height: 92px;
+        border-radius: 8px;
+    }
+    .report-kpis {
+        display: grid;
+        grid-template-columns: 1.25fr 1fr 1fr;
+        gap: 16px;
+        margin-top: 22px;
+    }
+    .report-kpi-main {
+        grid-row: span 2;
+        min-height: 178px;
+        display: flex;
+        align-items: center;
+        gap: 22px;
+        background: radial-gradient(circle at 18% 50%, rgba(19,145,134,.42), transparent 5.5rem), linear-gradient(135deg, #061b2a, #08314b);
+        color: #ffffff;
+    }
+    .report-kpi-main small {
+        color: #ffffff;
+    }
+    .report-kpi-main strong {
+        color: #2dc6b8;
+        font-size: clamp(2rem, 3vw, 2.8rem);
+    }
+    .report-kpi-icon {
+        width: 92px;
+        height: 92px;
+        border-radius: 999px;
+        display: grid;
+        place-items: center;
+        background: linear-gradient(135deg, #139186, #51d1c4);
+        color: #ffffff;
+        font-size: 2.15rem;
+        font-weight: 900;
+        flex: 0 0 auto;
+    }
+    @media (max-width: 760px) {
+        .mhd-hero {
+            min-height: 300px;
+        }
+        .mhd-hero-top {
+            min-height: 150px;
+            background: linear-gradient(126deg, #061b2a 0%, #092d43 66%, #139186 66.5%, #139186 69%, transparent 69.5%);
+        }
+        .mhd-hero-brand {
+            left: 18px;
+            top: 20px;
+            width: 78%;
+        }
+        .mhd-hero-logo {
+            max-width: 70px;
+            max-height: 70px;
+        }
+        .mhd-villa-scene {
+            opacity: .32;
+            width: 72%;
+        }
+        .mhd-villa {
+            right: 12px;
+            width: 82%;
+        }
+        .mhd-hero-title {
+            clip-path: none;
+            padding: 22px 20px 24px;
+        }
+        .report-kpis {
+            grid-template-columns: 1fr;
+        }
+        .report-kpi-main {
+            grid-row: auto;
+        }
+    }
     </style>
     """,
     unsafe_allow_html=True
@@ -986,8 +1278,8 @@ def render_tracking_report_html(df, total_cout, total_paiement, current_advance,
         "</div>"
         f"{''.join(rows_html)}"
         "</div>"
-        "<div style='display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:16px;margin-top:18px;'>"
-        f"<div class='design-kpi' style='background:#051f30;'><small style='color:white;'>Total devis TTC</small><strong>{total_cout:.2f} DT</strong></div>"
+        "<div class='report-kpis'>"
+        f"<div class='design-kpi report-kpi-main'><div class='report-kpi-icon'>DT</div><div><small>Total devis TTC</small><strong>{total_cout:.2f} DT</strong></div></div>"
         f"<div class='design-kpi'><small>Paiement engagé</small><strong>{total_paiement:.2f} DT</strong></div>"
         f"<div class='design-kpi'><small>Avance perçue</small><strong>{current_advance:.2f} DT</strong></div>"
         f"<div class='design-kpi'><small>{finance_label}</small><strong>{finance_value}</strong></div>"
@@ -1069,6 +1361,52 @@ def render_logo(width=190):
     if os.path.exists(LOGO_PATH):
         st.image(LOGO_PATH, width=width)
 
+def image_data_uri(path):
+    if not os.path.exists(path):
+        return ""
+    with open(path, "rb") as image_file:
+        encoded = base64.b64encode(image_file.read()).decode("utf-8")
+    ext = os.path.splitext(path)[1].lower().replace(".", "") or "png"
+    if ext == "jpg":
+        ext = "jpeg"
+    return f"data:image/{ext};base64,{encoded}"
+
+def render_app_header(title, subtitle, mode_label):
+    logo_src = image_data_uri(LOGO_PATH)
+    logo_html = f"<img class='mhd-hero-logo' src='{logo_src}' alt='MHD'>" if logo_src else ""
+    st.markdown(
+        f"""
+        <section class="mhd-hero">
+            <div class="mhd-hero-top">
+                <div class="mhd-hero-brand">
+                    <div class="mhd-hero-brand-row">
+                        {logo_html}
+                        <div>
+                            <div class="mhd-brand-name">MHD</div>
+                            <div class="mhd-brand-subtitle">Cabinet d'architecture</div>
+                            <div class="mhd-brand-person">Mourad Hammami</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="mhd-villa-scene" aria-hidden="true">
+                    <div class="mhd-villa">
+                        <span class="mhd-window one"></span>
+                        <span class="mhd-window two"></span>
+                        <span class="mhd-window three"></span>
+                    </div>
+                </div>
+            </div>
+            <div class="mhd-hero-title">
+                <div class="mhd-mode-badge">{html.escape(mode_label)}</div>
+                <h1>{html.escape(title)}</h1>
+                <strong>{html.escape(subtitle)}</strong>
+                <div class="mhd-gold-line"></div>
+            </div>
+        </section>
+        """,
+        unsafe_allow_html=True
+    )
+
 def render_client_progress_bar(label, percent, amount_text):
     percent = max(0, min(100, int(percent or 0)))
     st.markdown(
@@ -1088,10 +1426,7 @@ def render_client_progress_bar(label, percent, amount_text):
 
 def render_client_portal(conn):
     c = conn.cursor()
-    st.markdown("<div class='card client-hero'>", unsafe_allow_html=True)
-    render_logo(width=220)
-    st.markdown("<h1>Espace client - Suivi des travaux</h1>", unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
+    render_app_header("Espace client", "Suivi des travaux", "Client")
 
     if "client_portal_user" not in st.session_state:
         st.session_state.client_portal_user = None
@@ -1274,6 +1609,25 @@ def get_secret_value(name):
     except Exception:
         return os.environ.get(name, "")
 
+def get_query_param(name, default=""):
+    try:
+        value = st.query_params.get(name, default)
+    except Exception:
+        return default
+    if isinstance(value, list):
+        return value[0] if value else default
+    return value or default
+
+def is_client_portal_link():
+    espace = str(get_query_param("espace", "")).strip().lower()
+    return espace in ["client", "espace-client", "espace_client"]
+
+def get_client_portal_link():
+    public_app_url = str(get_secret_value("PUBLIC_APP_URL")).strip().rstrip("/")
+    if public_app_url:
+        return f"{public_app_url}?espace=client"
+    return "?espace=client"
+
 def require_architect_login():
     if "architect_logged_in" not in st.session_state:
         st.session_state.architect_logged_in = False
@@ -1309,19 +1663,21 @@ def require_architect_login():
     st.markdown("</div>", unsafe_allow_html=True)
     return False
 
-# Titre avec logo
-st.markdown("<div class='card app-logo-header'>", unsafe_allow_html=True)
-render_logo(width=155)
-st.markdown("<div><h1>Architecte - Devis Multi-Lots & Suivi</h1><p>Mourad Hammami Design</p></div></div>", unsafe_allow_html=True)
-
 conn = db_connect()
 c = conn.cursor()
 
-app_mode = st.sidebar.radio("Accès", ["Architecte", "Espace client"], horizontal=False)
+if is_client_portal_link():
+    app_mode = "Espace client"
+else:
+    app_mode = st.sidebar.radio("Accès", ["Architecte", "Espace client"], horizontal=False)
+
 if app_mode == "Espace client":
     render_client_portal(conn)
     conn.close()
     st.stop()
+
+# Titre avec logo
+render_app_header("Devis global", "Et suivi d'avancement", "Architecte")
 
 if not require_architect_login():
     conn.close()
@@ -1348,6 +1704,10 @@ project_status = "devis_initial"
 deadline_alerts_enabled = False
 if client_id:
     with st.expander("🔐 Accès client au suivi des travaux"):
+        client_portal_link = get_client_portal_link()
+        st.markdown("**Lien interface client**")
+        st.code(client_portal_link, language=None)
+        st.caption("Envoyez ce lien au client avec son identifiant et son mot de passe.")
         c.execute("SELECT username, updated_at FROM client_portal_users WHERE client_id = ?", (client_id,))
         existing_access = c.fetchone()
         if existing_access:
@@ -1644,11 +2004,6 @@ else:
             panel_title = "📄 Devis initial" if not is_tracking else "📄 Devis global & suivi d'avancement"
             st.markdown(f"<div class='card'><h2>{panel_title}</h2>", unsafe_allow_html=True)
             display_columns = ["Lot", "Désignation", "Unité", "Quantité", "Prix Unitaire", "Coût Total"]
-            if is_tracking:
-                display_columns += ["Durée", "Début", "Fin", "Avancement (%)", "Paiement Engagé", "Image"]
-                if deadline_alerts_enabled:
-                    display_columns += ["Progression délai (%)", "Jours restants", "Alerte délai"]
-            st.dataframe(df[display_columns], use_container_width=True, hide_index=True)
             total_paiement = df["Paiement Engagé"].sum()
             total_cout = df["Coût Total"].sum()
             taux_amort = (total_paiement / total_cout * 100) if total_cout else 0
@@ -1658,18 +2013,20 @@ else:
             current_advance = get_total_advances(c, project_id)
             besoin_financement = current_advance - total_paiement
             if is_tracking:
+                render_tracking_report_html(
+                    df,
+                    total_cout,
+                    total_paiement,
+                    current_advance,
+                    besoin_financement,
+                    taux_moyen
+                )
                 if deadline_alerts_enabled:
                     st.markdown("<div class='card'><h2>Alertes délais</h2>", unsafe_allow_html=True)
                     render_deadline_alert_summary(df)
                     st.markdown("</div>", unsafe_allow_html=True)
-                col_g, col_d, col_f = st.columns(3)
-                col_g.markdown(f"<div class='design-kpi'><small>Taux d'amortissement</small><strong>{taux_amort:.2f}%</strong></div>", unsafe_allow_html=True)
-                col_d.markdown(f"<div class='design-kpi'><small>Taux moyen réalisation</small><strong>{taux_moyen:.2f}%</strong></div>", unsafe_allow_html=True)
-                if besoin_financement < 0:
-                    col_f.markdown(f"<div class='design-kpi'><small>Besoin financement</small><strong>{-besoin_financement:.2f} DT</strong></div>", unsafe_allow_html=True)
-                else:
-                    col_f.markdown(f"<div class='design-kpi'><small>Excédent financement</small><strong>{besoin_financement:.2f} DT</strong></div>", unsafe_allow_html=True)
             else:
+                st.dataframe(df[display_columns], use_container_width=True, hide_index=True)
                 st.markdown(f"<div class='design-kpi'><small>Total devis TTC</small><strong>{total_cout:.2f} DT</strong></div>", unsafe_allow_html=True)
 
             # Enregistrer les détails du projet dans la base de données
