@@ -1284,6 +1284,23 @@ def normalize_label(value):
     value = re.sub(r"[^a-z0-9]+", " ", value)
     return " ".join(value.split())
 
+UNIT_OPTIONS = ["m²", "ML", "Pièces", "Forfait"]
+
+def normalize_unit(value):
+    unit_norm = normalize_label(value).replace(".", "")
+    if unit_norm in ["ml", "m l", "metre lineaire", "metre linear", "metres lineaires"]:
+        return "ML"
+    if unit_norm in ["piece", "pieces", "pcs", "pce", "u", "unite", "unites"]:
+        return "Pièces"
+    if unit_norm in ["forfait", "fft", "ff", "global"]:
+        return "Forfait"
+    return "m²"
+
+def compute_line_total(unite, quantite, prix_unitaire):
+    if normalize_unit(unite) == "Forfait":
+        return float(prix_unitaire or 0.0)
+    return float(quantite or 0.0) * float(prix_unitaire or 0.0)
+
 def tokenize_label(value):
     stopwords = {
         "de", "du", "des", "la", "le", "les", "en", "et", "a", "au", "aux",
@@ -1560,13 +1577,11 @@ def parse_quote_text_to_rows(text, lots_db):
         unit_match = re.search(units_pattern, line, flags=re.IGNORECASE)
         unit = "m²"
         if unit_match:
-            unit_norm = normalize_label(unit_match.group(1)).replace(".", "")
-            if unit_norm == "ml":
-                unit = "ML"
-            elif unit_norm in ["piece", "pieces", "pcs", "pce", "u", "unite"]:
-                unit = "Pièces"
+            unit = normalize_unit(unit_match.group(1))
         qty = float(nums[0].replace(",", ".")) if nums else 1.0
         pu = float(nums[-1].replace(",", ".")) if len(nums) >= 2 else 0.0
+        if unit == "Forfait":
+            qty = 1.0
         designation = re.sub(number_pattern, " ", line)
         designation = re.sub(units_pattern, " ", designation, flags=re.IGNORECASE)
         designation = re.sub(r"[-:;|]+", " ", designation)
@@ -1580,7 +1595,7 @@ def parse_quote_text_to_rows(text, lots_db):
             "Unité": unit,
             "Quantité": qty,
             "Prix Unitaire": pu,
-            "Coût Total": qty * pu,
+            "Coût Total": compute_line_total(unit, qty, pu),
         })
     return pd.DataFrame(rows)
 
@@ -2839,14 +2854,22 @@ else:
                 column_config={
                     "Lot": st.column_config.SelectboxColumn("Lot", options=sorted(st.session_state.lots_db["lots"].dropna().astype(str).unique().tolist()) + ["Divers"]),
                     "Désignation": st.column_config.TextColumn("Désignation"),
-                    "Unité": st.column_config.SelectboxColumn("Unité", options=["m²", "ML", "Pièces"]),
+                    "Unité": st.column_config.SelectboxColumn("Unité", options=UNIT_OPTIONS),
                     "Quantité": st.column_config.NumberColumn("Quantité", min_value=0.0, step=1.0),
                     "Prix Unitaire": st.column_config.NumberColumn("Prix Unitaire", min_value=0.0, step=1.0),
                     "Coût Total": st.column_config.NumberColumn("Coût Total", min_value=0.0, step=1.0),
                 },
                 key=f"quote_rows_editor_{project_id}"
             )
-            edited_quote_rows["Coût Total"] = edited_quote_rows["Quantité"].fillna(0) * edited_quote_rows["Prix Unitaire"].fillna(0)
+            edited_quote_rows["Unité"] = edited_quote_rows["Unité"].apply(normalize_unit)
+            edited_quote_rows["Quantité"] = edited_quote_rows.apply(
+                lambda row: 1.0 if normalize_unit(row.get("Unité")) == "Forfait" else row.get("Quantité", 0),
+                axis=1,
+            )
+            edited_quote_rows["Coût Total"] = edited_quote_rows.apply(
+                lambda row: compute_line_total(row.get("Unité"), row.get("Quantité"), row.get("Prix Unitaire")),
+                axis=1,
+            )
             st.session_state.scanned_quote_rows[scanned_key] = edited_quote_rows
             st.info("Ces lignes seront ajoutées au devis au moment de l'enregistrement.")
             if st.button("Vider les lignes importées", key=f"clear_quote_rows_{project_id}"):
@@ -2878,17 +2901,31 @@ else:
                         st.markdown(f"<h3>{d}</h3>", unsafe_allow_html=True)
                         default = default_values.get((lot, d), {})
                         default_unite = str(default.get("Unité", "m²") or "m²").strip()
-                        if default_unite.lower() in ["ml", "m.l", "metre lineaire", "mètre linéaire"]:
-                            default_unite = "ML"
-                        elif normalize_label(default_unite) in ["piece", "pieces", "pcs", "pce", "u", "unite"]:
-                            default_unite = "Pièces"
+                        default_unite = normalize_unit(default_unite)
+                        unite = st.selectbox("Unité", options=UNIT_OPTIONS, index=UNIT_OPTIONS.index(default_unite), key=f"u_{lot}_{d}")
+                        if unite == "Forfait":
+                            quantite = 1.0
+                            st.number_input(
+                                "Quantité",
+                                min_value=1.0,
+                                max_value=1.0,
+                                step=1.0,
+                                value=1.0,
+                                disabled=True,
+                                key=f"q_{lot}_{d}",
+                                help="Pour un forfait, la quantité est fixée à 1 et le montant saisi devient le coût total.",
+                            )
+                            prix_unitaire = st.number_input(
+                                "Montant du forfait",
+                                min_value=0.0,
+                                step=100.0,
+                                value=float(default.get("Prix Unitaire", default.get("Coût Total", 0.0)) or 0.0),
+                                key=f"p_{lot}_{d}",
+                            )
                         else:
-                            default_unite = "m²"
-                        unit_options = ["m²", "ML", "Pièces"]
-                        unite = st.selectbox("Unité", options=unit_options, index=unit_options.index(default_unite), key=f"u_{lot}_{d}")
-                        quantite = st.number_input(f"Quantité", min_value=0.0, step=1.0, value=float(default.get("Quantité", 0.0)), key=f"q_{lot}_{d}")
-                        prix_unitaire = st.number_input(f"Prix Unitaire", min_value=0.0, step=1.0, value=float(default.get("Prix Unitaire", 0.0)), key=f"p_{lot}_{d}")
-                        cout_total = quantite * prix_unitaire
+                            quantite = st.number_input(f"Quantité", min_value=0.0, step=1.0, value=float(default.get("Quantité", 0.0)), key=f"q_{lot}_{d}")
+                            prix_unitaire = st.number_input(f"Prix Unitaire", min_value=0.0, step=1.0, value=float(default.get("Prix Unitaire", 0.0)), key=f"p_{lot}_{d}")
+                        cout_total = compute_line_total(unite, quantite, prix_unitaire)
                         image_data = None
                         if is_tracking:
                             c4, c5 = st.columns(2)
@@ -2966,9 +3003,12 @@ else:
             if not designation:
                 continue
             unite = str(imported.get("Unité") or "m²").strip()
+            unite = normalize_unit(unite)
             quantite = float(imported.get("Quantité") or 0)
             prix_unitaire = float(imported.get("Prix Unitaire") or 0)
-            cout_total = quantite * prix_unitaire
+            if unite == "Forfait":
+                quantite = 1.0
+            cout_total = compute_line_total(unite, quantite, prix_unitaire)
             default = default_values.get((lot, designation), {})
             duree = int(default.get("Durée", 1) or 1)
             debut = datetime.today().date()
