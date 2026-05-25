@@ -11,7 +11,19 @@ import hashlib
 import tempfile
 import html
 import hmac
+import re
+import difflib
 from PIL import Image, ImageDraw
+
+try:
+    import fitz
+except ImportError:
+    fitz = None
+
+try:
+    import pytesseract
+except ImportError:
+    pytesseract = None
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(APP_DIR, "architecte.db")
@@ -62,6 +74,22 @@ st.markdown(
     .sidebar .sidebar-content {
         background: #ffffff;
         box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+    }
+    [data-testid="stSidebar"] input,
+    [data-testid="stSidebar"] textarea,
+    [data-testid="stSidebar"] .stTextInput input {
+        color: #051f30 !important;
+        background: #ffffff !important;
+        caret-color: #051f30 !important;
+    }
+    [data-testid="stSidebar"] input::placeholder,
+    [data-testid="stSidebar"] textarea::placeholder {
+        color: #667985 !important;
+        opacity: 1 !important;
+    }
+    [data-testid="stSidebar"] label,
+    [data-testid="stSidebar"] p {
+        color: #051f30 !important;
     }
     .stProgress > div > div {
         background: #139186;
@@ -1147,6 +1175,107 @@ def format_date(value):
     except ValueError:
         return str(value)
 
+def normalize_label(value):
+    return unicodedata.normalize("NFKD", str(value or "")).encode("ascii", "ignore").decode("ascii").lower().strip()
+
+def save_lot_designation(lot, designation):
+    lot = str(lot or "").strip()
+    designation = str(designation or "").strip()
+    if not lot or not designation:
+        return False, "Veuillez renseigner le lot et la désignation."
+    new_row = pd.DataFrame([{"lots": lot, "DESIGNATIONS": designation}])
+    file_path = os.path.join(APP_DIR, "lot_et_designation_par_lot.xlsx")
+    if os.path.exists(file_path):
+        current_df = pd.read_excel(file_path)
+    else:
+        current_df = pd.DataFrame(columns=["lots", "DESIGNATIONS"])
+    current_df.columns = current_df.columns.str.strip()
+    current_df = pd.concat([current_df, new_row], ignore_index=True)
+    before = len(current_df)
+    current_df.drop_duplicates(subset=["lots", "DESIGNATIONS"], inplace=True)
+    current_df.to_excel(file_path, index=False)
+    st.session_state.lots_db = pd.concat([st.session_state.lots_db, new_row], ignore_index=True)
+    st.session_state.lots_db.drop_duplicates(subset=["lots", "DESIGNATIONS"], inplace=True)
+    if len(current_df) == before:
+        return True, f"« {designation} » existe déjà dans « {lot} »."
+    return True, f"« {designation} » ajouté à « {lot} »."
+
+def find_lot_for_designation(designation, lots_db):
+    if lots_db.empty:
+        return "Divers"
+    norm_target = normalize_label(designation)
+    lots_db = lots_db.copy()
+    lots_db["norm"] = lots_db["DESIGNATIONS"].apply(normalize_label)
+    exact = lots_db[lots_db["norm"] == norm_target]
+    if not exact.empty:
+        return exact.iloc[0]["lots"]
+    choices = lots_db["norm"].tolist()
+    match = difflib.get_close_matches(norm_target, choices, n=1, cutoff=0.55)
+    if match:
+        return lots_db[lots_db["norm"] == match[0]].iloc[0]["lots"]
+    return "Divers"
+
+def extract_text_from_uploaded_quote(uploaded_file):
+    raw = uploaded_file.getvalue()
+    name = uploaded_file.name.lower()
+    if name.endswith(".pdf") and fitz is not None:
+        text_parts = []
+        with fitz.open(stream=raw, filetype="pdf") as doc:
+            for page in doc:
+                text_parts.append(page.get_text("text"))
+        text = "\n".join(text_parts).strip()
+        if text:
+            return text, "PDF texte lu automatiquement."
+    if pytesseract is None:
+        return "", "OCR indisponible : installez pytesseract + Tesseract pour lire les scans image."
+    try:
+        if name.endswith(".pdf") and fitz is not None:
+            text_parts = []
+            with fitz.open(stream=raw, filetype="pdf") as doc:
+                for page in doc:
+                    pix = page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
+                    image = Image.open(BytesIO(pix.tobytes("png")))
+                    text_parts.append(pytesseract.image_to_string(image, lang="fra+eng"))
+            return "\n".join(text_parts).strip(), "PDF scanné lu par OCR."
+        image = Image.open(BytesIO(raw))
+        return pytesseract.image_to_string(image, lang="fra+eng").strip(), "Image lue par OCR."
+    except Exception as exc:
+        return "", f"Lecture impossible : {exc}"
+
+def parse_quote_text_to_rows(text, lots_db):
+    rows = []
+    units_pattern = r"(m2|m²|ml|m\.l|u|unite|unité|forfait|fft)"
+    number_pattern = r"(\d+(?:[,.]\d+)?)"
+    for raw_line in text.splitlines():
+        line = " ".join(raw_line.strip().split())
+        if len(line) < 4:
+            continue
+        nums = re.findall(number_pattern, line)
+        if not nums:
+            continue
+        unit_match = re.search(units_pattern, line, flags=re.IGNORECASE)
+        unit = "m²"
+        if unit_match and normalize_label(unit_match.group(1)).replace(".", "") == "ml":
+            unit = "ML"
+        qty = float(nums[0].replace(",", ".")) if nums else 1.0
+        pu = float(nums[-1].replace(",", ".")) if len(nums) >= 2 else 0.0
+        designation = re.sub(number_pattern, " ", line)
+        designation = re.sub(units_pattern, " ", designation, flags=re.IGNORECASE)
+        designation = re.sub(r"[-:;|]+", " ", designation)
+        designation = " ".join(designation.split())
+        if not designation:
+            designation = line
+        lot = find_lot_for_designation(designation, lots_db)
+        rows.append({
+            "Lot": lot,
+            "Désignation": designation[:180],
+            "Unité": unit,
+            "Quantité": qty,
+            "Prix Unitaire": pu,
+            "Coût Total": qty * pu,
+        })
+    return pd.DataFrame(rows)
+
 def deadline_status(duree, debut, avancement):
     today = datetime.today().date()
     if isinstance(debut, datetime):
@@ -1877,6 +2006,9 @@ if "devis_data" not in st.session_state:
 if "uploaded_images" not in st.session_state:
     st.session_state.uploaded_images = {}
 
+if "scanned_quote_rows" not in st.session_state:
+    st.session_state.scanned_quote_rows = {}
+
 def get_secret_value(name):
     try:
         return st.secrets[name]
@@ -2142,24 +2274,16 @@ if st.button("🔄 Nouveau devis"):
 with st.sidebar:
     st.markdown("<h2>➕ Nouvelle Désignation</h2>", unsafe_allow_html=True)
     with st.form("form_add"):
-        new_lot = st.text_input("Nom du lot", placeholder="Ex: Maçonnerie")
+        existing_lot_choice = st.selectbox("Lot existant", options=["Nouveau lot"] + sorted(st.session_state.lots_db["lots"].dropna().unique().tolist()))
+        new_lot = st.text_input("Nom du lot", value="" if existing_lot_choice == "Nouveau lot" else existing_lot_choice, placeholder="Ex: Maçonnerie")
         new_designation = st.text_input("Désignation", placeholder="Ex: Mur porteur")
         add_btn = st.form_submit_button("Ajouter")
-        if add_btn and new_lot and new_designation:
-            nouvelle_ligne = pd.DataFrame([{
-                "lots": new_lot.strip(),
-                "DESIGNATIONS": new_designation.strip()
-            }])
-            if os.path.exists("lot_et_designation_par_lot.xlsx"):
-                current_df = pd.read_excel("lot_et_designation_par_lot.xlsx")
+        if add_btn:
+            ok, message = save_lot_designation(new_lot, new_designation)
+            if ok:
+                st.success(f"✅ {message}")
             else:
-                current_df = pd.DataFrame(columns=["lots", "DESIGNATIONS"])
-            current_df = pd.concat([current_df, nouvelle_ligne], ignore_index=True)
-            current_df.drop_duplicates(subset=["lots", "DESIGNATIONS"], inplace=True)
-            current_df.to_excel("lot_et_designation_par_lot.xlsx", index=False)
-            st.session_state.lots_db = pd.concat([st.session_state.lots_db, nouvelle_ligne], ignore_index=True)
-            st.session_state.lots_db.drop_duplicates(subset=["lots", "DESIGNATIONS"], inplace=True)
-            st.success(f"✅ « {new_designation} » ajouté à « {new_lot} »")
+                st.error(message)
 
 # Sélection des lots
 st.markdown("<div class='card'><h2>📦 Sélection des Lots</h2>", unsafe_allow_html=True)
@@ -2179,16 +2303,64 @@ else:
         "Début", "Fin", "Jours Écoulés", "Retard (j)", "Avancement (%)", "Paiement Engagé", "Image"
     ])
     default_values = {(row["Lot"], row["Désignation"]): row for _, row in project_df.iterrows()}
+    scanned_key = str(project_id)
+
+    with st.expander("📥 Importer un devis écrit / scanné", expanded=False):
+        st.caption("Importez un PDF texte, un PDF scanné ou une image. Les lignes détectées sont proposées dans une table modifiable avant intégration au devis.")
+        quote_file = st.file_uploader("Devis scanné ou PDF", type=["pdf", "png", "jpg", "jpeg"], key=f"quote_import_{project_id}")
+        if quote_file and st.button("Lire et proposer les lignes du devis", key=f"parse_quote_{project_id}"):
+            extracted_text, extraction_message = extract_text_from_uploaded_quote(quote_file)
+            if extracted_text:
+                parsed_df = parse_quote_text_to_rows(extracted_text, st.session_state.lots_db)
+                if parsed_df.empty:
+                    st.warning("Texte lu, mais aucune ligne exploitable n'a été détectée. Vous pouvez compléter la table manuellement.")
+                    parsed_df = pd.DataFrame(columns=["Lot", "Désignation", "Unité", "Quantité", "Prix Unitaire", "Coût Total"])
+                st.session_state.scanned_quote_rows[scanned_key] = parsed_df
+                st.success(extraction_message)
+                with st.expander("Voir le texte extrait"):
+                    st.text_area("Texte détecté", extracted_text, height=180)
+            else:
+                st.warning(extraction_message)
+        quote_rows = st.session_state.scanned_quote_rows.get(scanned_key)
+        if quote_rows is not None:
+            edited_quote_rows = st.data_editor(
+                quote_rows,
+                use_container_width=True,
+                num_rows="dynamic",
+                column_config={
+                    "Lot": st.column_config.TextColumn("Lot"),
+                    "Désignation": st.column_config.TextColumn("Désignation"),
+                    "Unité": st.column_config.SelectboxColumn("Unité", options=["m²", "ML", "U", "Forfait"]),
+                    "Quantité": st.column_config.NumberColumn("Quantité", min_value=0.0, step=1.0),
+                    "Prix Unitaire": st.column_config.NumberColumn("Prix Unitaire", min_value=0.0, step=1.0),
+                    "Coût Total": st.column_config.NumberColumn("Coût Total", min_value=0.0, step=1.0),
+                },
+                key=f"quote_rows_editor_{project_id}"
+            )
+            edited_quote_rows["Coût Total"] = edited_quote_rows["Quantité"].fillna(0) * edited_quote_rows["Prix Unitaire"].fillna(0)
+            st.session_state.scanned_quote_rows[scanned_key] = edited_quote_rows
+            st.info("Ces lignes seront ajoutées au devis au moment de l'enregistrement.")
+            if st.button("Vider les lignes importées", key=f"clear_quote_rows_{project_id}"):
+                st.session_state.scanned_quote_rows.pop(scanned_key, None)
+                st.rerun()
 
     lots_uniques = sorted(st.session_state.lots_db["lots"].unique())
     existing_lots = [lot for lot in sorted(project_df["Lot"].dropna().unique()) if lot in lots_uniques]
     selected_lots = st.multiselect("Choisir les lots", options=lots_uniques, default=existing_lots, placeholder="Sélectionnez un ou plusieurs lots")
 
+    all_data = []
     if selected_lots:
-        all_data = []
         for lot in selected_lots:
             designations = st.session_state.lots_db[st.session_state.lots_db["lots"] == lot]["DESIGNATIONS"].unique().tolist()
+            if normalize_label(lot) == "divers":
+                designations = sorted(st.session_state.lots_db["DESIGNATIONS"].dropna().astype(str).unique().tolist())
             with st.expander(f"🔧 {lot}", expanded=True):
+                designation_search = st.text_input("Commencer à saisir une désignation", key=f"search_{lot}", placeholder="Ex: peinture, terrasse, plomberie...")
+                if designation_search:
+                    search_norm = normalize_label(designation_search)
+                    designations = [d for d in designations if normalize_label(d).startswith(search_norm)]
+                    if not designations:
+                        st.info("Aucune désignation ne commence par cette saisie.")
                 existing_designations = project_df[project_df["Lot"] == lot]["Désignation"].dropna().tolist()
                 selected_designations = st.multiselect(f"Désignations pour « {lot} »", options=designations, default=[d for d in existing_designations if d in designations], key=f"multi_{lot}")
                 for d in selected_designations:
@@ -2273,7 +2445,46 @@ else:
                             "Updated At": datetime.now().isoformat()
                         })
 
-        if all_data:
+    imported_rows = st.session_state.scanned_quote_rows.get(scanned_key)
+    if imported_rows is not None and not imported_rows.empty:
+        for _, imported in imported_rows.iterrows():
+            lot = str(imported.get("Lot") or "Divers").strip() or "Divers"
+            designation = str(imported.get("Désignation") or "").strip()
+            if not designation:
+                continue
+            unite = str(imported.get("Unité") or "m²").strip()
+            quantite = float(imported.get("Quantité") or 0)
+            prix_unitaire = float(imported.get("Prix Unitaire") or 0)
+            cout_total = quantite * prix_unitaire
+            default = default_values.get((lot, designation), {})
+            duree = int(default.get("Durée", 1) or 1)
+            debut = datetime.today().date()
+            fin = debut + timedelta(days=duree)
+            paiement = float(default.get("Paiement Engagé", 0.0) or 0.0) if is_tracking else 0.0
+            avancement = int(round((paiement / cout_total) * 100)) if cout_total else 0
+            deadline_info = deadline_status(duree, debut, avancement)
+            all_data.append({
+                "Lot": lot,
+                "Désignation": designation,
+                "Unité": unite,
+                "Quantité": quantite,
+                "Prix Unitaire": prix_unitaire,
+                "Coût Total": cout_total,
+                "Durée": duree,
+                "Début": debut,
+                "Fin": fin,
+                "Jours Écoulés": 0,
+                "Retard (j)": 0,
+                "Avancement (%)": avancement,
+                "Paiement Engagé": paiement,
+                "Image": default.get("Image", None),
+                "Progression délai (%)": deadline_info["time_percent"],
+                "Jours restants": deadline_info["remaining_days"],
+                "Alerte délai": deadline_info["alert_text"] if deadline_alerts_enabled else "",
+                "Updated At": datetime.now().isoformat()
+            })
+
+    if all_data:
             df = pd.DataFrame(all_data)
             panel_title = "📄 Devis initial" if not is_tracking else "📄 Devis global & suivi d'avancement"
             st.markdown(f"<div class='card'><h2>{panel_title}</h2>", unsafe_allow_html=True)
