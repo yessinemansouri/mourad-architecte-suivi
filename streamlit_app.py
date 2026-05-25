@@ -189,6 +189,17 @@ st.markdown(
         background: #ffffff !important;
         box-shadow: 0 0 0 4px rgba(19,145,134,.12), 0 10px 24px rgba(5,31,48,.08) !important;
     }
+    [data-testid="stSelectbox"] [data-baseweb="select"],
+    [data-testid="stSelectbox"] [data-baseweb="select"] > div {
+        border: 2px solid #139186 !important;
+        border-radius: 8px !important;
+        background-color: #ffffff !important;
+        box-shadow: 0 0 0 4px rgba(19,145,134,.13), 0 10px 24px rgba(5,31,48,.09) !important;
+    }
+    [data-testid="stSelectbox"] [data-baseweb="select"] * {
+        color: #051f30 !important;
+        font-weight: 700 !important;
+    }
     .client-project-card label {
         color: #051f30 !important;
         font-size: 1rem !important;
@@ -1302,15 +1313,27 @@ def save_lot_designation(lot, designation):
     else:
         current_df = pd.DataFrame(columns=["lots", "DESIGNATIONS"])
     current_df.columns = current_df.columns.str.strip()
+    for column in ["lots", "DESIGNATIONS"]:
+        if column not in current_df.columns:
+            current_df[column] = ""
+
+    session_duplicate = (
+        (st.session_state.lots_db["lots"].astype(str).str.strip() == lot)
+        & (st.session_state.lots_db["DESIGNATIONS"].astype(str).str.strip() == designation)
+    ).any()
+    file_duplicate = (
+        (current_df["lots"].astype(str).str.strip() == lot)
+        & (current_df["DESIGNATIONS"].astype(str).str.strip() == designation)
+    ).any()
+    if session_duplicate or file_duplicate:
+        return True, f"« {designation} » existe déjà dans « {lot} »."
+
     current_df = pd.concat([current_df, new_row], ignore_index=True)
-    before = len(current_df)
     current_df.drop_duplicates(subset=["lots", "DESIGNATIONS"], inplace=True)
     current_df.to_excel(file_path, index=False)
     st.session_state.lots_db = pd.concat([st.session_state.lots_db, new_row], ignore_index=True)
     st.session_state.lots_db.drop_duplicates(subset=["lots", "DESIGNATIONS"], inplace=True)
-    if len(current_df) == before:
-        return True, f"« {designation} » existe déjà dans « {lot} »."
-    return True, f"« {designation} » ajouté à « {lot} »."
+    return True, f"La désignation « {designation} » a été créée avec succès dans le lot « {lot} »."
 
 def load_custom_lots_file():
     file_path = os.path.join(APP_DIR, "lot_et_designation_par_lot.xlsx")
@@ -2599,10 +2622,25 @@ if st.button("🔄 Nouveau devis"):
 # Barre latérale pour ajouter de nouvelles désignations
 with st.sidebar:
     st.markdown("<h2>➕ Nouvelle Désignation</h2>", unsafe_allow_html=True)
+    existing_lot_choice = st.selectbox(
+        "Lot existant",
+        options=["Nouveau lot"] + sorted(st.session_state.lots_db["lots"].dropna().unique().tolist()),
+        key="add_designation_lot_choice"
+    )
+    if existing_lot_choice != "Nouveau lot":
+        existing_designations_for_lot = sorted(
+            st.session_state.lots_db[
+                st.session_state.lots_db["lots"].astype(str).str.strip() == existing_lot_choice
+            ]["DESIGNATIONS"].dropna().astype(str).unique().tolist()
+        )
+        st.selectbox(
+            "Désignations existantes dans ce lot",
+            options=existing_designations_for_lot if existing_designations_for_lot else ["Aucune désignation enregistrée"],
+            key=f"existing_designations_preview_{existing_lot_choice}"
+        )
     with st.form("form_add"):
-        existing_lot_choice = st.selectbox("Lot existant", options=["Nouveau lot"] + sorted(st.session_state.lots_db["lots"].dropna().unique().tolist()))
         new_lot = st.text_input("Nom du lot", value="" if existing_lot_choice == "Nouveau lot" else existing_lot_choice, placeholder="Ex: Maçonnerie")
-        new_designation = st.text_input("Désignation", placeholder="Ex: Mur porteur")
+        new_designation = st.text_input("Nouvelle désignation à ajouter", placeholder="Ex: Mur porteur")
         add_btn = st.form_submit_button("Ajouter")
         if add_btn:
             ok, message = save_lot_designation(new_lot, new_designation)
