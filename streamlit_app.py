@@ -13,6 +13,7 @@ import html
 import hmac
 import re
 import difflib
+import shutil
 from PIL import Image, ImageDraw
 
 try:
@@ -90,6 +91,22 @@ st.markdown(
     [data-testid="stSidebar"] label,
     [data-testid="stSidebar"] p {
         color: #051f30 !important;
+    }
+    [data-testid="stSidebar"] [style*="background: rgb(5, 31, 48)"],
+    [data-testid="stSidebar"] [style*="background-color: rgb(5, 31, 48)"],
+    [data-testid="stSidebar"] [style*="background: rgb(19, 145, 134)"],
+    [data-testid="stSidebar"] [style*="background-color: rgb(19, 145, 134)"],
+    [data-testid="stSidebar"] [style*="background: #051f30"],
+    [data-testid="stSidebar"] [style*="background: #139186"] {
+        color: #ffffff !important;
+    }
+    [data-testid="stSidebar"] [style*="background: rgb(5, 31, 48)"] *,
+    [data-testid="stSidebar"] [style*="background-color: rgb(5, 31, 48)"] *,
+    [data-testid="stSidebar"] [style*="background: rgb(19, 145, 134)"] *,
+    [data-testid="stSidebar"] [style*="background-color: rgb(19, 145, 134)"] *,
+    [data-testid="stSidebar"] [style*="background: #051f30"] *,
+    [data-testid="stSidebar"] [style*="background: #139186"] * {
+        color: #ffffff !important;
     }
     .stProgress > div > div {
         background: #139186;
@@ -1200,6 +1217,45 @@ def save_lot_designation(lot, designation):
         return True, f"« {designation} » existe déjà dans « {lot} »."
     return True, f"« {designation} » ajouté à « {lot} »."
 
+def load_custom_lots_file():
+    file_path = os.path.join(APP_DIR, "lot_et_designation_par_lot.xlsx")
+    if os.path.exists(file_path):
+        df = pd.read_excel(file_path)
+        df.columns = df.columns.str.strip()
+        return df
+    return pd.DataFrame(columns=["lots", "DESIGNATIONS"])
+
+def persist_custom_lots_file(df):
+    file_path = os.path.join(APP_DIR, "lot_et_designation_par_lot.xlsx")
+    df = df[["lots", "DESIGNATIONS"]].dropna(how="all")
+    df.to_excel(file_path, index=False)
+
+def delete_designation_from_catalog(lot, designation):
+    lot = str(lot or "").strip()
+    designation = str(designation or "").strip()
+    if not lot or not designation:
+        return False, "Veuillez choisir un lot et une désignation."
+    custom_df = load_custom_lots_file()
+    before = len(custom_df)
+    mask = ~((custom_df["lots"].astype(str).str.strip() == lot) & (custom_df["DESIGNATIONS"].astype(str).str.strip() == designation))
+    custom_df = custom_df[mask]
+    persist_custom_lots_file(custom_df)
+    session_mask = ~((st.session_state.lots_db["lots"].astype(str).str.strip() == lot) & (st.session_state.lots_db["DESIGNATIONS"].astype(str).str.strip() == designation))
+    st.session_state.lots_db = st.session_state.lots_db[session_mask].copy()
+    if len(custom_df) == before:
+        return True, "Désignation retirée de la liste active. Elle provenait peut-être des lots prédéfinis."
+    return True, f"« {designation} » supprimée de « {lot} »."
+
+def delete_lot_from_catalog(lot):
+    lot = str(lot or "").strip()
+    if not lot:
+        return False, "Veuillez choisir un lot."
+    custom_df = load_custom_lots_file()
+    custom_df = custom_df[custom_df["lots"].astype(str).str.strip() != lot]
+    persist_custom_lots_file(custom_df)
+    st.session_state.lots_db = st.session_state.lots_db[st.session_state.lots_db["lots"].astype(str).str.strip() != lot].copy()
+    return True, f"Lot « {lot} » supprimé de la liste active."
+
 def find_lot_for_designation(designation, lots_db):
     if lots_db.empty:
         return "Divers"
@@ -1214,6 +1270,48 @@ def find_lot_for_designation(designation, lots_db):
     if match:
         return lots_db[lots_db["norm"] == match[0]].iloc[0]["lots"]
     return "Divers"
+
+def configure_tesseract():
+    if pytesseract is None:
+        return False, "La librairie pytesseract n'est pas installée."
+    candidates = []
+    try:
+        secret_cmd = st.secrets.get("TESSERACT_CMD", None)
+        if secret_cmd:
+            candidates.append(str(secret_cmd))
+    except Exception:
+        pass
+    env_cmd = os.environ.get("TESSERACT_CMD")
+    if env_cmd:
+        candidates.append(env_cmd)
+    detected = shutil.which("tesseract")
+    if detected:
+        candidates.append(detected)
+    candidates.extend([
+        r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+        r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+    ])
+    for candidate in candidates:
+        if candidate and (os.path.exists(candidate) or shutil.which(candidate)):
+            pytesseract.pytesseract.tesseract_cmd = candidate
+            try:
+                pytesseract.get_tesseract_version()
+                return True, f"Tesseract détecté : {candidate}"
+            except Exception:
+                continue
+    return False, "Moteur Tesseract introuvable. En ligne, ajoutez packages.txt avec tesseract-ocr et tesseract-ocr-fra."
+
+def ocr_image_to_text(image):
+    ok, message = configure_tesseract()
+    if not ok:
+        return "", message
+    try:
+        return pytesseract.image_to_string(image, lang="fra+eng").strip(), message
+    except Exception:
+        try:
+            return pytesseract.image_to_string(image, lang="eng").strip(), message
+        except Exception as exc:
+            return "", f"OCR impossible : {exc}"
 
 def extract_text_from_uploaded_quote(uploaded_file):
     raw = uploaded_file.getvalue()
@@ -1235,16 +1333,19 @@ def extract_text_from_uploaded_quote(uploaded_file):
                 for page in doc:
                     pix = page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
                     image = Image.open(BytesIO(pix.tobytes("png")))
-                    text_parts.append(pytesseract.image_to_string(image, lang="fra+eng"))
+                    page_text, ocr_message = ocr_image_to_text(image)
+                    if page_text:
+                        text_parts.append(page_text)
             return "\n".join(text_parts).strip(), "PDF scanné lu par OCR."
         image = Image.open(BytesIO(raw))
-        return pytesseract.image_to_string(image, lang="fra+eng").strip(), "Image lue par OCR."
+        text, ocr_message = ocr_image_to_text(image)
+        return text, "Image lue par OCR." if text else ocr_message
     except Exception as exc:
         return "", f"Lecture impossible : {exc}"
 
 def parse_quote_text_to_rows(text, lots_db):
     rows = []
-    units_pattern = r"(m2|m²|ml|m\.l|u|unite|unité|forfait|fft)"
+    units_pattern = r"(m2|m²|ml|m\.l|piece|pièce|pieces|pièces|pcs|pce|u|unite|unité|forfait|fft)"
     number_pattern = r"(\d+(?:[,.]\d+)?)"
     for raw_line in text.splitlines():
         line = " ".join(raw_line.strip().split())
@@ -1255,8 +1356,12 @@ def parse_quote_text_to_rows(text, lots_db):
             continue
         unit_match = re.search(units_pattern, line, flags=re.IGNORECASE)
         unit = "m²"
-        if unit_match and normalize_label(unit_match.group(1)).replace(".", "") == "ml":
-            unit = "ML"
+        if unit_match:
+            unit_norm = normalize_label(unit_match.group(1)).replace(".", "")
+            if unit_norm == "ml":
+                unit = "ML"
+            elif unit_norm in ["piece", "pieces", "pcs", "pce", "u", "unite"]:
+                unit = "Pièces"
         qty = float(nums[0].replace(",", ".")) if nums else 1.0
         pu = float(nums[-1].replace(",", ".")) if len(nums) >= 2 else 0.0
         designation = re.sub(number_pattern, " ", line)
@@ -2284,6 +2389,27 @@ with st.sidebar:
                 st.success(f"✅ {message}")
             else:
                 st.error(message)
+    with st.expander("🗑️ Supprimer lot / désignation"):
+        lot_to_delete_from = st.selectbox("Lot", options=sorted(st.session_state.lots_db["lots"].dropna().unique().tolist()), key="delete_lot_choice")
+        designations_to_delete = sorted(
+            st.session_state.lots_db[st.session_state.lots_db["lots"] == lot_to_delete_from]["DESIGNATIONS"].dropna().astype(str).unique().tolist()
+        ) if lot_to_delete_from else []
+        designation_to_delete = st.selectbox("Désignation", options=designations_to_delete, key="delete_designation_choice")
+        col_delete_designation, col_delete_lot = st.columns(2)
+        if col_delete_designation.button("Supprimer désignation"):
+            ok, message = delete_designation_from_catalog(lot_to_delete_from, designation_to_delete)
+            if ok:
+                st.success(message)
+                st.rerun()
+            else:
+                st.error(message)
+        if col_delete_lot.button("Supprimer lot"):
+            ok, message = delete_lot_from_catalog(lot_to_delete_from)
+            if ok:
+                st.success(message)
+                st.rerun()
+            else:
+                st.error(message)
 
 # Sélection des lots
 st.markdown("<div class='card'><h2>📦 Sélection des Lots</h2>", unsafe_allow_html=True)
@@ -2330,7 +2456,7 @@ else:
                 column_config={
                     "Lot": st.column_config.TextColumn("Lot"),
                     "Désignation": st.column_config.TextColumn("Désignation"),
-                    "Unité": st.column_config.SelectboxColumn("Unité", options=["m²", "ML", "U", "Forfait"]),
+                    "Unité": st.column_config.SelectboxColumn("Unité", options=["m²", "ML", "Pièces"]),
                     "Quantité": st.column_config.NumberColumn("Quantité", min_value=0.0, step=1.0),
                     "Prix Unitaire": st.column_config.NumberColumn("Prix Unitaire", min_value=0.0, step=1.0),
                     "Coût Total": st.column_config.NumberColumn("Coût Total", min_value=0.0, step=1.0),
@@ -2370,9 +2496,12 @@ else:
                         default_unite = str(default.get("Unité", "m²") or "m²").strip()
                         if default_unite.lower() in ["ml", "m.l", "metre lineaire", "mètre linéaire"]:
                             default_unite = "ML"
+                        elif normalize_label(default_unite) in ["piece", "pieces", "pcs", "pce", "u", "unite"]:
+                            default_unite = "Pièces"
                         else:
                             default_unite = "m²"
-                        unite = st.selectbox("Unité", options=["m²", "ML"], index=0 if default_unite == "m²" else 1, key=f"u_{lot}_{d}")
+                        unit_options = ["m²", "ML", "Pièces"]
+                        unite = st.selectbox("Unité", options=unit_options, index=unit_options.index(default_unite), key=f"u_{lot}_{d}")
                         quantite = st.number_input(f"Quantité", min_value=0.0, step=1.0, value=float(default.get("Quantité", 0.0)), key=f"q_{lot}_{d}")
                         prix_unitaire = st.number_input(f"Prix Unitaire", min_value=0.0, step=1.0, value=float(default.get("Prix Unitaire", 0.0)), key=f"p_{lot}_{d}")
                         cout_total = quantite * prix_unitaire
