@@ -914,6 +914,25 @@ st.markdown(
         box-shadow: 0 18px 36px rgba(5,31,48,.24);
         color: #ffffff !important;
     }
+    [data-testid="stSidebar"] [role="radiogroup"] label,
+    [data-testid="stSidebar"] [role="radiogroup"] label *,
+    [data-testid="stSidebar"] [data-testid="stAlert"],
+    [data-testid="stSidebar"] [data-testid="stAlert"] * {
+        color: #ffffff !important;
+    }
+    [data-testid="stSidebar"] [data-testid="stAlert"] {
+        background: rgba(19,145,134,.92) !important;
+        border: 1px solid rgba(255,255,255,.22) !important;
+    }
+    [data-testid="stSidebar"] div[data-testid="stFormSubmitButton"] > button {
+        background: #ffffff !important;
+        border: 1px solid rgba(5,31,48,.18) !important;
+        color: #051f30 !important;
+        box-shadow: 0 8px 18px rgba(5,31,48,.10) !important;
+    }
+    [data-testid="stSidebar"] div[data-testid="stFormSubmitButton"] > button * {
+        color: #051f30 !important;
+    }
     .mhd-hero {
         min-height: 380px;
         margin-bottom: 34px;
