@@ -840,7 +840,31 @@ st.markdown(
         border-right: 1px solid rgba(255,255,255,.12);
     }
     [data-testid="stSidebar"] * {
-        color: rgba(255,255,255,.92);
+        color: rgba(255,255,255,.94) !important;
+    }
+    [data-testid="stSidebar"] div[data-testid="stExpander"],
+    [data-testid="stSidebar"] div[data-testid="stForm"] {
+        background: rgba(255,255,255,.96) !important;
+        border-color: rgba(255,255,255,.78) !important;
+    }
+    [data-testid="stSidebar"] div[data-testid="stExpander"] *,
+    [data-testid="stSidebar"] div[data-testid="stForm"] *,
+    [data-testid="stSidebar"] .stSelectbox label,
+    [data-testid="stSidebar"] .stTextInput label {
+        color: #051f30 !important;
+    }
+    [data-testid="stSidebar"] .stButton > button,
+    [data-testid="stSidebar"] div[data-testid="stFormSubmitButton"] > button {
+        color: #ffffff !important;
+    }
+    [data-testid="stSidebar"] .stButton > button *,
+    [data-testid="stSidebar"] div[data-testid="stFormSubmitButton"] > button * {
+        color: #ffffff !important;
+    }
+    [data-testid="stSidebar"] input,
+    [data-testid="stSidebar"] textarea,
+    [data-testid="stSidebar"] [data-baseweb="select"] * {
+        color: #051f30 !important;
     }
     [data-testid="stSidebar"] [role="radiogroup"] label {
         background: rgba(255,255,255,.08);
@@ -876,13 +900,19 @@ st.markdown(
         border-radius: 8px !important;
         border: 1px solid rgba(255,255,255,.14) !important;
         background: linear-gradient(135deg, #051f30, #139186) !important;
+        color: #ffffff !important;
         box-shadow: 0 14px 30px rgba(5,31,48,.20);
         font-weight: 800;
+    }
+    .stButton > button *,
+    .stDownloadButton > button * {
+        color: #ffffff !important;
     }
     .stButton > button:hover,
     .stDownloadButton > button:hover {
         transform: translateY(-1px);
         box-shadow: 0 18px 36px rgba(5,31,48,.24);
+        color: #ffffff !important;
     }
     .mhd-hero {
         min-height: 380px;
@@ -2390,26 +2420,55 @@ with st.sidebar:
             else:
                 st.error(message)
     with st.expander("🗑️ Supprimer lot / désignation"):
+        if "pending_delete_designation" not in st.session_state:
+            st.session_state.pending_delete_designation = None
+        if "pending_delete_lot" not in st.session_state:
+            st.session_state.pending_delete_lot = None
+
         lot_to_delete_from = st.selectbox("Lot", options=sorted(st.session_state.lots_db["lots"].dropna().unique().tolist()), key="delete_lot_choice")
         designations_to_delete = sorted(
             st.session_state.lots_db[st.session_state.lots_db["lots"] == lot_to_delete_from]["DESIGNATIONS"].dropna().astype(str).unique().tolist()
         ) if lot_to_delete_from else []
         designation_to_delete = st.selectbox("Désignation", options=designations_to_delete, key="delete_designation_choice")
         col_delete_designation, col_delete_lot = st.columns(2)
-        if col_delete_designation.button("Supprimer désignation"):
-            ok, message = delete_designation_from_catalog(lot_to_delete_from, designation_to_delete)
-            if ok:
-                st.success(message)
+        if col_delete_designation.button("Supprimer désignation", key="request_delete_designation"):
+            st.session_state.pending_delete_designation = (lot_to_delete_from, designation_to_delete)
+            st.session_state.pending_delete_lot = None
+        if col_delete_lot.button("Supprimer lot", key="request_delete_lot"):
+            st.session_state.pending_delete_lot = lot_to_delete_from
+            st.session_state.pending_delete_designation = None
+
+        if st.session_state.pending_delete_designation:
+            pending_lot, pending_designation = st.session_state.pending_delete_designation
+            st.warning(f"Confirmer la suppression de la désignation « {pending_designation} » dans le lot « {pending_lot} » ?")
+            confirm_col, cancel_col = st.columns(2)
+            if confirm_col.button("Confirmer suppression désignation", key="confirm_delete_designation"):
+                ok, message = delete_designation_from_catalog(pending_lot, pending_designation)
+                st.session_state.pending_delete_designation = None
+                if ok:
+                    st.success(message)
+                    st.rerun()
+                else:
+                    st.error(message)
+            if cancel_col.button("Annuler", key="cancel_delete_designation"):
+                st.session_state.pending_delete_designation = None
                 st.rerun()
-            else:
-                st.error(message)
-        if col_delete_lot.button("Supprimer lot"):
-            ok, message = delete_lot_from_catalog(lot_to_delete_from)
-            if ok:
-                st.success(message)
+
+        if st.session_state.pending_delete_lot:
+            pending_lot = st.session_state.pending_delete_lot
+            st.warning(f"Confirmer la suppression du lot « {pending_lot} » et de toutes ses désignations ?")
+            confirm_col, cancel_col = st.columns(2)
+            if confirm_col.button("Confirmer suppression lot", key="confirm_delete_lot"):
+                ok, message = delete_lot_from_catalog(pending_lot)
+                st.session_state.pending_delete_lot = None
+                if ok:
+                    st.success(message)
+                    st.rerun()
+                else:
+                    st.error(message)
+            if cancel_col.button("Annuler", key="cancel_delete_lot"):
+                st.session_state.pending_delete_lot = None
                 st.rerun()
-            else:
-                st.error(message)
 
 # Sélection des lots
 st.markdown("<div class='card'><h2>📦 Sélection des Lots</h2>", unsafe_allow_html=True)
