@@ -14,7 +14,7 @@ import hmac
 import re
 import difflib
 import shutil
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageOps, ImageEnhance, ImageFilter
 
 try:
     import fitz
@@ -1269,7 +1269,26 @@ def format_date(value):
         return str(value)
 
 def normalize_label(value):
-    return unicodedata.normalize("NFKD", str(value or "")).encode("ascii", "ignore").decode("ascii").lower().strip()
+    value = unicodedata.normalize("NFKD", str(value or "")).encode("ascii", "ignore").decode("ascii").lower()
+    value = re.sub(r"[^a-z0-9]+", " ", value)
+    return " ".join(value.split())
+
+def tokenize_label(value):
+    stopwords = {
+        "de", "du", "des", "la", "le", "les", "en", "et", "a", "au", "aux",
+        "pour", "avec", "sans", "sur", "sous", "dans", "par", "un", "une",
+        "d", "l", "m", "cm", "mm", "ml", "m2", "m3", "piece", "pieces",
+        "unite", "forfait", "pose", "fourniture"
+    }
+    tokens = normalize_label(value).split()
+    return {token for token in tokens if len(token) >= 3 and token not in stopwords}
+
+def token_overlap_score(source, target):
+    source_tokens = tokenize_label(source)
+    target_tokens = tokenize_label(target)
+    if not source_tokens or not target_tokens:
+        return 0.0
+    return len(source_tokens & target_tokens) / max(1, min(len(source_tokens), len(target_tokens)))
 
 def save_lot_designation(lot, designation):
     lot = str(lot or "").strip()
@@ -1332,19 +1351,67 @@ def delete_lot_from_catalog(lot):
     st.session_state.lots_db = st.session_state.lots_db[st.session_state.lots_db["lots"].astype(str).str.strip() != lot].copy()
     return True, f"Lot « {lot} » supprimé de la liste active."
 
+def delete_client_with_projects(conn, client_id):
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT client_name FROM clients WHERE client_id = ?", (client_id,))
+        client_row = cursor.fetchone()
+        if not client_row:
+            return False, "Client introuvable."
+        client_name = client_row[0]
+
+        cursor.execute("SELECT COUNT(*) FROM projects WHERE client_id = ?", (client_id,))
+        project_count = cursor.fetchone()[0]
+
+        cursor.execute(
+            "DELETE FROM project_details WHERE project_id IN (SELECT project_id FROM projects WHERE client_id = ?)",
+            (client_id,)
+        )
+        cursor.execute(
+            "DELETE FROM project_history WHERE project_id IN (SELECT project_id FROM projects WHERE client_id = ?)",
+            (client_id,)
+        )
+        cursor.execute(
+            "DELETE FROM project_advances WHERE project_id IN (SELECT project_id FROM projects WHERE client_id = ?)",
+            (client_id,)
+        )
+        cursor.execute("DELETE FROM client_portal_users WHERE client_id = ?", (client_id,))
+        cursor.execute("DELETE FROM projects WHERE client_id = ?", (client_id,))
+        cursor.execute("DELETE FROM clients WHERE client_id = ?", (client_id,))
+        conn.commit()
+        return True, f"Client « {client_name} » supprimé avec {project_count} projet(s)."
+    except Exception as exc:
+        conn.rollback()
+        return False, f"Suppression impossible : {exc}"
+
 def find_lot_for_designation(designation, lots_db):
     if lots_db.empty:
         return "Divers"
     norm_target = normalize_label(designation)
     lots_db = lots_db.copy()
     lots_db["norm"] = lots_db["DESIGNATIONS"].apply(normalize_label)
+    lots_db["lot_norm"] = lots_db["lots"].apply(normalize_label)
     exact = lots_db[lots_db["norm"] == norm_target]
     if not exact.empty:
         return exact.iloc[0]["lots"]
     choices = lots_db["norm"].tolist()
-    match = difflib.get_close_matches(norm_target, choices, n=1, cutoff=0.55)
+    match = difflib.get_close_matches(norm_target, choices, n=1, cutoff=0.46)
     if match:
         return lots_db[lots_db["norm"] == match[0]].iloc[0]["lots"]
+
+    best_lot = "Divers"
+    best_score = 0.0
+    for _, row in lots_db.iterrows():
+        designation_ratio = difflib.SequenceMatcher(None, norm_target, row["norm"]).ratio()
+        designation_overlap = token_overlap_score(norm_target, row["norm"])
+        lot_overlap = token_overlap_score(norm_target, row["lot_norm"])
+        score = (designation_ratio * 0.35) + (designation_overlap * 0.50) + (lot_overlap * 0.70)
+        if score > best_score:
+            best_score = score
+            best_lot = row["lots"]
+
+    if best_score >= 0.28:
+        return best_lot
     return "Divers"
 
 def configure_tesseract():
@@ -1381,13 +1448,50 @@ def ocr_image_to_text(image):
     ok, message = configure_tesseract()
     if not ok:
         return "", message
+
+    def prepare_image(source_image):
+        prepared = source_image.convert("RGB")
+        width, height = prepared.size
+        target_width = max(width, 1800)
+        if width < target_width:
+            ratio = target_width / width
+            prepared = prepared.resize((target_width, int(height * ratio)), Image.Resampling.LANCZOS)
+        prepared = ImageOps.grayscale(prepared)
+        prepared = ImageOps.autocontrast(prepared)
+        prepared = ImageEnhance.Contrast(prepared).enhance(1.8)
+        prepared = ImageEnhance.Sharpness(prepared).enhance(1.4)
+        prepared = prepared.filter(ImageFilter.MedianFilter(size=3))
+        return prepared
+
+    def text_quality_score(value):
+        lines = [line for line in value.splitlines() if len(line.strip()) >= 4]
+        digit_lines = sum(1 for line in lines if re.search(r"\d", line))
+        letters = sum(1 for char in value if char.isalpha())
+        return letters + (digit_lines * 30) + (len(lines) * 8)
+
+    configs = [
+        "--oem 3 --psm 6",
+        "--oem 3 --psm 4",
+        "--oem 3 --psm 11",
+    ]
+    images_to_try = [image, prepare_image(image)]
+    best_text = ""
+    best_score = 0
     try:
-        return pytesseract.image_to_string(image, lang="fra+eng").strip(), message
-    except Exception:
-        try:
-            return pytesseract.image_to_string(image, lang="eng").strip(), message
-        except Exception as exc:
-            return "", f"OCR impossible : {exc}"
+        for current_image in images_to_try:
+            for config in configs:
+                for lang in ["fra+eng", "eng"]:
+                    try:
+                        candidate = pytesseract.image_to_string(current_image, lang=lang, config=config).strip()
+                    except Exception:
+                        continue
+                    candidate_score = text_quality_score(candidate)
+                    if candidate_score > best_score:
+                        best_text = candidate
+                        best_score = candidate_score
+        return best_text, message if best_text else "OCR terminé, mais aucun texte exploitable n'a été détecté."
+    except Exception as exc:
+        return "", f"OCR impossible : {exc}"
 
 def extract_text_from_uploaded_quote(uploaded_file):
     raw = uploaded_file.getvalue()
@@ -1407,7 +1511,7 @@ def extract_text_from_uploaded_quote(uploaded_file):
             text_parts = []
             with fitz.open(stream=raw, filetype="pdf") as doc:
                 for page in doc:
-                    pix = page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
+                    pix = page.get_pixmap(matrix=fitz.Matrix(3, 3), alpha=False)
                     image = Image.open(BytesIO(pix.tobytes("png")))
                     page_text, ocr_message = ocr_image_to_text(image)
                     if page_text:
@@ -2190,6 +2294,12 @@ if "uploaded_images" not in st.session_state:
 if "scanned_quote_rows" not in st.session_state:
     st.session_state.scanned_quote_rows = {}
 
+if "scanned_quote_text" not in st.session_state:
+    st.session_state.scanned_quote_text = {}
+
+if "pending_delete_client" not in st.session_state:
+    st.session_state.pending_delete_client = None
+
 def get_secret_value(name):
     try:
         return st.secrets[name]
@@ -2293,6 +2403,35 @@ project_id = None
 project_status = "devis_initial"
 deadline_alerts_enabled = False
 if client_id:
+    c.execute("SELECT COUNT(*) FROM projects WHERE client_id = ?", (client_id,))
+    selected_client_project_count = c.fetchone()[0]
+    delete_client_col, _ = st.columns([1, 2])
+    if delete_client_col.button("🗑️ Supprimer ce client", key=f"request_delete_client_{client_id}"):
+        st.session_state.pending_delete_client = {
+            "client_id": client_id,
+            "client_name": selected_client,
+            "project_count": selected_client_project_count,
+        }
+
+    pending_client = st.session_state.pending_delete_client
+    if pending_client and pending_client.get("client_id") == client_id:
+        st.warning(
+            f"Confirmer la suppression du client « {pending_client['client_name']} » "
+            f"avec tous ses projets ({pending_client['project_count']} projet(s)) ?"
+        )
+        confirm_delete_client_col, cancel_delete_client_col = st.columns(2)
+        if confirm_delete_client_col.button("Confirmer suppression client", key=f"confirm_delete_client_{client_id}"):
+            ok, message = delete_client_with_projects(conn, client_id)
+            st.session_state.pending_delete_client = None
+            if ok:
+                st.success(message)
+                st.rerun()
+            else:
+                st.error(message)
+        if cancel_delete_client_col.button("Annuler", key=f"cancel_delete_client_{client_id}"):
+            st.session_state.pending_delete_client = None
+            st.rerun()
+
     with st.expander("🔐 Accès client au suivi des travaux"):
         client_portal_link = get_client_portal_link()
         st.markdown("**Lien interface client**")
@@ -2553,6 +2692,7 @@ else:
                     st.warning("Texte lu, mais aucune ligne exploitable n'a été détectée. Vous pouvez compléter la table manuellement.")
                     parsed_df = pd.DataFrame(columns=["Lot", "Désignation", "Unité", "Quantité", "Prix Unitaire", "Coût Total"])
                 st.session_state.scanned_quote_rows[scanned_key] = parsed_df
+                st.session_state.scanned_quote_text[scanned_key] = extracted_text
                 st.success(extraction_message)
                 with st.expander("Voir le texte extrait"):
                     st.text_area("Texte détecté", extracted_text, height=180)
@@ -2560,12 +2700,28 @@ else:
                 st.warning(extraction_message)
         quote_rows = st.session_state.scanned_quote_rows.get(scanned_key)
         if quote_rows is not None:
+            with st.expander("Corriger le texte lu et recalculer la répartition"):
+                corrected_text = st.text_area(
+                    "Texte reconnu par OCR",
+                    value=st.session_state.scanned_quote_text.get(scanned_key, ""),
+                    height=180,
+                    key=f"quote_text_editor_{project_id}"
+                )
+                if st.button("Recalculer depuis ce texte", key=f"reparse_quote_text_{project_id}"):
+                    reparsed_df = parse_quote_text_to_rows(corrected_text, st.session_state.lots_db)
+                    if reparsed_df.empty:
+                        reparsed_df = pd.DataFrame(columns=["Lot", "Désignation", "Unité", "Quantité", "Prix Unitaire", "Coût Total"])
+                        st.warning("Aucune ligne exploitable n'a été trouvée dans le texte corrigé.")
+                    st.session_state.scanned_quote_text[scanned_key] = corrected_text
+                    st.session_state.scanned_quote_rows[scanned_key] = reparsed_df
+                    st.rerun()
+
             edited_quote_rows = st.data_editor(
                 quote_rows,
                 use_container_width=True,
                 num_rows="dynamic",
                 column_config={
-                    "Lot": st.column_config.TextColumn("Lot"),
+                    "Lot": st.column_config.SelectboxColumn("Lot", options=sorted(st.session_state.lots_db["lots"].dropna().astype(str).unique().tolist()) + ["Divers"]),
                     "Désignation": st.column_config.TextColumn("Désignation"),
                     "Unité": st.column_config.SelectboxColumn("Unité", options=["m²", "ML", "Pièces"]),
                     "Quantité": st.column_config.NumberColumn("Quantité", min_value=0.0, step=1.0),
@@ -2579,6 +2735,7 @@ else:
             st.info("Ces lignes seront ajoutées au devis au moment de l'enregistrement.")
             if st.button("Vider les lignes importées", key=f"clear_quote_rows_{project_id}"):
                 st.session_state.scanned_quote_rows.pop(scanned_key, None)
+                st.session_state.scanned_quote_text.pop(scanned_key, None)
                 st.rerun()
 
     lots_uniques = sorted(st.session_state.lots_db["lots"].unique())
