@@ -1841,6 +1841,76 @@ def render_financing_timeline(cursor, project_id, selected_client="", selected_p
     )
     st.markdown("</div>", unsafe_allow_html=True)
 
+def generate_field_survey_pdf(lots_db):
+    pdf = FPDF(orientation="L", unit="mm", format="A4")
+    pdf.set_auto_page_break(auto=True, margin=12)
+    pdf.add_page()
+
+    def add_survey_header():
+        pdf.set_fill_color(*BRAND_NAVY)
+        pdf.rect(0, 0, 297, 26, "F")
+        pdf.set_fill_color(*BRAND_TEAL)
+        pdf.rect(238, 0, 59, 26, "F")
+        if os.path.exists(LOGO_PATH):
+            pdf.image(LOGO_PATH, x=10, y=5, w=22)
+        pdf.set_text_color(255, 255, 255)
+        pdf.set_font("Arial", "B", 15)
+        pdf.text(36, 11, safe_text("MHD - FICHE TERRAIN"))
+        pdf.set_font("Arial", "", 9)
+        pdf.text(36, 18, safe_text("Tableau volant à remplir sur chantier"))
+        pdf.set_font("Arial", "B", 9)
+        pdf.text(244, 15, safe_text(datetime.today().strftime("%d/%m/%Y")))
+        pdf.set_y(34)
+        pdf.set_text_color(*BRAND_NAVY)
+        pdf.set_font("Arial", "B", 10)
+        pdf.cell(0, 7, safe_text("Remplir les colonnes Unite, Quantite, Delai et Cout unitaire directement sur terrain."), ln=True)
+        pdf.ln(2)
+
+    def add_table_header():
+        headers = ["Lot", "Désignation", "Unité", "Quantité", "Délai", "Coût unitaire", "Observation"]
+        widths = [45, 105, 22, 25, 24, 32, 24]
+        pdf.set_fill_color(*BRAND_NAVY)
+        pdf.set_text_color(255, 255, 255)
+        pdf.set_draw_color(190, 202, 210)
+        pdf.set_font("Arial", "B", 8)
+        for header, width in zip(headers, widths):
+            pdf.cell(width, 8, safe_text(header), 1, 0, "C", True)
+        pdf.ln()
+        return widths
+
+    add_survey_header()
+    widths = add_table_header()
+    cleaned_df = lots_db[["lots", "DESIGNATIONS"]].dropna(how="all").copy()
+    cleaned_df["lots"] = cleaned_df["lots"].astype(str).str.strip()
+    cleaned_df["DESIGNATIONS"] = cleaned_df["DESIGNATIONS"].astype(str).str.strip()
+    cleaned_df = cleaned_df[(cleaned_df["lots"] != "") & (cleaned_df["DESIGNATIONS"] != "")]
+    cleaned_df = cleaned_df.drop_duplicates(subset=["lots", "DESIGNATIONS"]).sort_values(["lots", "DESIGNATIONS"])
+
+    pdf.set_font("Arial", "", 7)
+    pdf.set_text_color(*BRAND_NAVY)
+    for _, row in cleaned_df.iterrows():
+        if pdf.get_y() > 188:
+            pdf.add_page()
+            add_survey_header()
+            widths = add_table_header()
+            pdf.set_font("Arial", "", 7)
+            pdf.set_text_color(*BRAND_NAVY)
+        pdf.cell(widths[0], 9, safe_text(row["lots"])[:28], 1)
+        pdf.cell(widths[1], 9, safe_text(row["DESIGNATIONS"])[:72], 1)
+        for width in widths[2:]:
+            pdf.cell(width, 9, "", 1)
+        pdf.ln()
+
+    temp_pdf = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+    temp_pdf.close()
+    pdf.output(dest="F", name=temp_pdf.name)
+    output = BytesIO()
+    with open(temp_pdf.name, "rb") as f:
+        output.write(f.read())
+    output.seek(0)
+    os.remove(temp_pdf.name)
+    return output
+
 def add_pdf_header(pdf, title, selected_client="", selected_project=""):
     pdf.set_fill_color(*BRAND_NAVY)
     pdf.rect(0, 0, 210, 34, "F")
@@ -2701,6 +2771,14 @@ with st.sidebar:
 
 # Sélection des lots
 st.markdown("<div class='card'><h2>📦 Sélection des Lots</h2>", unsafe_allow_html=True)
+terrain_pdf = generate_field_survey_pdf(st.session_state.lots_db)
+st.download_button(
+    "🖨️ Télécharger le tableau terrain à imprimer",
+    data=terrain_pdf,
+    file_name=f"tableau_terrain_lots_designations_{datetime.today().strftime('%Y%m%d')}.pdf",
+    mime="application/pdf",
+    help="Fiche vierge avec tous les lots et désignations pour remplir unité, quantité, délai et coût unitaire sur terrain."
+)
 if not project_id:
     st.warning("Veuillez sélectionner ou créer un projet avant de choisir des lots.")
 else:
