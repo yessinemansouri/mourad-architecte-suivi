@@ -167,6 +167,33 @@ st.markdown(
         font-size: 1.45rem;
         margin-top: 6px;
     }
+    .field-section-title {
+        margin: 18px 0 8px 0;
+        padding: 10px 12px;
+        border-left: 5px solid #139186;
+        background: #eef8f7;
+        color: #051f30;
+        font-size: 1.08rem;
+        font-weight: 800;
+        border-radius: 6px;
+    }
+    .field-help-text {
+        margin: -2px 0 10px 0;
+        color: #415466;
+        font-weight: 600;
+    }
+    .client-project-card .stTextInput input,
+    .client-project-card .stSelectbox [data-baseweb="select"] {
+        border: 2px solid #139186 !important;
+        border-radius: 8px !important;
+        background: #ffffff !important;
+        box-shadow: 0 0 0 4px rgba(19,145,134,.12), 0 10px 24px rgba(5,31,48,.08) !important;
+    }
+    .client-project-card label {
+        color: #051f30 !important;
+        font-size: 1rem !important;
+        font-weight: 800 !important;
+    }
     .client-hero {
         text-align: center;
     }
@@ -2244,10 +2271,12 @@ if not require_architect_login():
     st.stop()
 
 # Gestion des clients et projets
-st.markdown("<div class='card'><h2>👤 Gestion des Clients et Projets</h2>", unsafe_allow_html=True)
+st.markdown("<div class='card client-project-card'><h2>👤 Gestion des Clients et Projets</h2>", unsafe_allow_html=True)
 
 # Sélection ou création d'un client
-client_name = st.text_input("Nom du client", placeholder="Ex: Jean Dupont")
+st.markdown("<div class='field-section-title'>1. Choisir ou créer un client</div>", unsafe_allow_html=True)
+st.markdown("<p class='field-help-text'>Écrire un nouveau nom de client ici si le client n'existe pas encore.</p>", unsafe_allow_html=True)
+client_name = st.text_input("Créer un nouveau client", placeholder="Ex: Jean Dupont")
 if client_name:
     c.execute("INSERT OR IGNORE INTO clients (client_name) VALUES (?)", (client_name,))
     conn.commit()
@@ -2255,7 +2284,8 @@ if client_name:
 c.execute("SELECT client_id, client_name FROM clients")
 clients = c.fetchall()
 client_options = {row[1]: row[0] for row in clients}
-selected_client = st.selectbox("Sélectionner un client", options=[""] + list(client_options.keys()))
+st.markdown("<p class='field-help-text'>Puis sélectionner le client à utiliser pour ce devis.</p>", unsafe_allow_html=True)
+selected_client = st.selectbox("Client à utiliser", options=[""] + list(client_options.keys()))
 client_id = client_options.get(selected_client) if selected_client else None
 
 # Sélection ou création d'un projet
@@ -2289,7 +2319,9 @@ if client_id:
             else:
                 st.error("Veuillez renseigner un identifiant et un mot de passe.")
 
-    project_name = st.text_input("Nom du projet", placeholder="Ex: Rénovation Villa")
+    st.markdown("<div class='field-section-title'>2. Choisir ou créer un projet</div>", unsafe_allow_html=True)
+    st.markdown("<p class='field-help-text'>Écrire un nouveau nom de projet ici si le projet n'existe pas encore.</p>", unsafe_allow_html=True)
+    project_name = st.text_input("Créer un nouveau projet", placeholder="Ex: Rénovation Villa")
     if project_name and st.button("Créer nouveau projet"):
         c.execute("INSERT INTO projects (client_id, project_name, created_at, project_status) VALUES (?, ?, ?, ?)",
                   (client_id, project_name, datetime.now().isoformat(), "devis_initial"))
@@ -2299,7 +2331,8 @@ if client_id:
     c.execute("SELECT project_id, project_name FROM projects WHERE client_id = ?", (client_id,))
     projects = c.fetchall()
     project_options = {row[1]: row[0] for row in projects}
-    selected_project = st.selectbox("Sélectionner un projet", options=[""] + list(project_options.keys()))
+    st.markdown("<p class='field-help-text'>Puis sélectionner le projet à ouvrir.</p>", unsafe_allow_html=True)
+    selected_project = st.selectbox("Projet à utiliser", options=[""] + list(project_options.keys()))
     project_id = project_options.get(selected_project) if selected_project else None
     project_status = "devis_initial"
     if project_id:
