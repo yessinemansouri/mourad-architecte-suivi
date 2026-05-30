@@ -1,6 +1,10 @@
 import streamlit as st
 import pandas as pd
 import sqlite3
+try:
+    import psycopg2
+except ImportError:
+    psycopg2 = None
 from datetime import datetime, timedelta
 from io import BytesIO
 from fpdf import FPDF
@@ -1139,21 +1143,142 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# Initialisation de la base de données SQLite
+# Base de données : PostgreSQL en production si DATABASE_URL est configuré.
+DEFAULT_DB_HOST = "db.wmbxmxncqvxayzmxtywm.supabase.co"
+DEFAULT_DB_PORT = "5432"
+DEFAULT_DB_NAME = "postgres"
+DEFAULT_DB_USER = "postgres"
+
+def get_database_url():
+    try:
+        value = st.secrets.get("DATABASE_URL", "")
+    except Exception:
+        value = ""
+    database_url = os.environ.get("DATABASE_URL", value).strip()
+    if database_url:
+        return database_url
+
+    try:
+        db_password = st.secrets.get("DB_PASSWORD", "")
+    except Exception:
+        db_password = ""
+    db_password = os.environ.get("DB_PASSWORD", db_password).strip()
+    if not db_password:
+        return ""
+
+    return (
+        f"host={DEFAULT_DB_HOST} "
+        f"port={DEFAULT_DB_PORT} "
+        f"dbname={DEFAULT_DB_NAME} "
+        f"user={DEFAULT_DB_USER} "
+        f"password={db_password}"
+    )
+
+def use_postgres():
+    return bool(get_database_url())
+
+def translate_sql(sql):
+    if not use_postgres():
+        return sql
+    normalized = " ".join(sql.strip().split())
+    sql = sql.replace("?", "%s")
+    if normalized.upper().startswith("INSERT OR IGNORE INTO"):
+        sql = sql.replace("INSERT OR IGNORE INTO", "INSERT INTO", 1)
+        if "ON CONFLICT" not in sql.upper():
+            sql = sql.rstrip() + " ON CONFLICT DO NOTHING"
+    if normalized.upper().startswith("INSERT OR REPLACE INTO PROJECT_DETAILS"):
+        sql = sql.replace("INSERT OR REPLACE INTO project_details", "INSERT INTO project_details", 1)
+        sql = sql.rstrip() + """
+            ON CONFLICT(project_id, lot, designation) DO UPDATE SET
+                unite = EXCLUDED.unite,
+                quantite = EXCLUDED.quantite,
+                prix_unitaire = EXCLUDED.prix_unitaire,
+                cout_total = EXCLUDED.cout_total,
+                duree = EXCLUDED.duree,
+                debut = EXCLUDED.debut,
+                fin = EXCLUDED.fin,
+                jours_ecoules = EXCLUDED.jours_ecoules,
+                retard = EXCLUDED.retard,
+                avancement = EXCLUDED.avancement,
+                paiement = EXCLUDED.paiement,
+                image = EXCLUDED.image,
+                updated_at = EXCLUDED.updated_at
+        """
+    return sql
+
+class PostgresCursor:
+    def __init__(self, cursor):
+        self.cursor = cursor
+
+    def execute(self, sql, params=None):
+        self.cursor.execute(translate_sql(sql), params or ())
+        return self
+
+    def executemany(self, sql, seq_of_params):
+        self.cursor.executemany(translate_sql(sql), seq_of_params)
+        return self
+
+    def fetchone(self):
+        return self.cursor.fetchone()
+
+    def fetchall(self):
+        return self.cursor.fetchall()
+
+    def __iter__(self):
+        return iter(self.cursor)
+
+class PostgresConnection:
+    def __init__(self, connection):
+        self.connection = connection
+
+    def cursor(self):
+        return PostgresCursor(self.connection.cursor())
+
+    def commit(self):
+        self.connection.commit()
+
+    def rollback(self):
+        self.connection.rollback()
+
+    def close(self):
+        self.connection.close()
+
+def db_connect():
+    database_url = get_database_url()
+    if database_url:
+        if psycopg2 is None:
+            st.error("Le module psycopg2-binary est requis pour PostgreSQL. Ajoutez-le dans requirements.txt.")
+            st.stop()
+        return PostgresConnection(psycopg2.connect(database_url))
+    return sqlite3.connect(DB_PATH, timeout=15)
+
+def column_exists(cursor, table_name, column_name):
+    if use_postgres():
+        cursor.execute(
+            """
+            SELECT COUNT(*)
+            FROM information_schema.columns
+            WHERE table_name = %s AND column_name = %s
+            """,
+            (table_name, column_name),
+        )
+        return bool(cursor.fetchone()[0])
+    cursor.execute(f"PRAGMA table_info({table_name})")
+    return column_name in [info[1] for info in cursor.fetchall()]
+
 def init_db():
-    conn = sqlite3.connect(DB_PATH, timeout=15)
+    conn = db_connect()
     c = conn.cursor()
-    # Tableaux clients
-    c.execute('''
+    id_type = "SERIAL PRIMARY KEY" if use_postgres() else "INTEGER PRIMARY KEY AUTOINCREMENT"
+    c.execute(f'''
         CREATE TABLE IF NOT EXISTS clients (
-            client_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            client_id {id_type},
             client_name TEXT UNIQUE NOT NULL
         )
     ''')
-    # Tableaux projets
-    c.execute('''
+    c.execute(f'''
         CREATE TABLE IF NOT EXISTS projects (
-            project_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id {id_type},
             client_id INTEGER,
             project_name TEXT NOT NULL,
             created_at TEXT NOT NULL,
@@ -1163,21 +1288,18 @@ def init_db():
             FOREIGN KEY (client_id) REFERENCES clients(client_id)
         )
     ''')
-    c.execute("PRAGMA table_info(projects)")
-    project_columns = [info[1] for info in c.fetchall()]
-    if 'project_status' not in project_columns:
+    if not column_exists(c, "projects", "project_status"):
         c.execute("ALTER TABLE projects ADD COLUMN project_status TEXT DEFAULT 'devis_initial'")
-    if 'validated_at' not in project_columns:
+    if not column_exists(c, "projects", "validated_at"):
         c.execute("ALTER TABLE projects ADD COLUMN validated_at TEXT")
-    if 'deadline_alerts_enabled' not in project_columns:
+    if not column_exists(c, "projects", "deadline_alerts_enabled"):
         c.execute("ALTER TABLE projects ADD COLUMN deadline_alerts_enabled INTEGER DEFAULT 0")
     c.execute("SELECT COUNT(*) FROM projects WHERE project_status IS NULL OR project_status = ''")
     if c.fetchone()[0]:
         c.execute("UPDATE projects SET project_status = 'devis_initial' WHERE project_status IS NULL OR project_status = ''")
-    # Tableaux détails du projet (dernière version)
-    c.execute('''
+    c.execute(f'''
         CREATE TABLE IF NOT EXISTS project_details (
-            detail_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            detail_id {id_type},
             project_id INTEGER,
             lot TEXT,
             designation TEXT,
@@ -1198,10 +1320,9 @@ def init_db():
             FOREIGN KEY (project_id) REFERENCES projects(project_id)
         )
     ''')
-    # Tableaux historique du projet
-    c.execute('''
+    c.execute(f'''
         CREATE TABLE IF NOT EXISTS project_history (
-            history_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            history_id {id_type},
             project_id INTEGER,
             lot TEXT,
             designation TEXT,
@@ -1212,44 +1333,40 @@ def init_db():
             FOREIGN KEY (project_id) REFERENCES projects(project_id)
         )
     ''')
-    # Vérifier et ajouter la colonne paiement si elle n'existe pas
-    c.execute("PRAGMA table_info(project_history)")
-    columns = [info[1] for info in c.fetchall()]
-    if 'paiement' not in columns:
+    if not column_exists(c, "project_history", "paiement"):
         c.execute('ALTER TABLE project_history ADD COLUMN paiement REAL')
-    # Tableaux avances perçues
-    c.execute('''
+    c.execute(f'''
         CREATE TABLE IF NOT EXISTS project_advances (
-            advance_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            advance_id {id_type},
             project_id INTEGER,
             advance_amount REAL,
             updated_at TEXT,
             FOREIGN KEY (project_id) REFERENCES projects(project_id)
         )
     ''')
-    c.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'project_advances'")
-    advances_schema = c.fetchone()
-    if advances_schema and "UNIQUE(project_id)" in advances_schema[0].replace(" ", ""):
-        c.execute("ALTER TABLE project_advances RENAME TO project_advances_old")
-        c.execute('''
-            CREATE TABLE project_advances (
-                advance_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                project_id INTEGER,
-                advance_amount REAL,
-                updated_at TEXT,
-                FOREIGN KEY (project_id) REFERENCES projects(project_id)
-            )
-        ''')
-        c.execute('''
-            INSERT INTO project_advances (advance_id, project_id, advance_amount, updated_at)
-            SELECT advance_id, project_id, advance_amount, updated_at
-            FROM project_advances_old
-        ''')
-        c.execute("DROP TABLE project_advances_old")
-    # Accès client au tableau de suivi
-    c.execute('''
+    if not use_postgres():
+        c.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'project_advances'")
+        advances_schema = c.fetchone()
+        if advances_schema and "UNIQUE(project_id)" in advances_schema[0].replace(" ", ""):
+            c.execute("ALTER TABLE project_advances RENAME TO project_advances_old")
+            c.execute(f'''
+                CREATE TABLE project_advances (
+                    advance_id {id_type},
+                    project_id INTEGER,
+                    advance_amount REAL,
+                    updated_at TEXT,
+                    FOREIGN KEY (project_id) REFERENCES projects(project_id)
+                )
+            ''')
+            c.execute('''
+                INSERT INTO project_advances (advance_id, project_id, advance_amount, updated_at)
+                SELECT advance_id, project_id, advance_amount, updated_at
+                FROM project_advances_old
+            ''')
+            c.execute("DROP TABLE project_advances_old")
+    c.execute(f'''
         CREATE TABLE IF NOT EXISTS client_portal_users (
-            user_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id {id_type},
             client_id INTEGER UNIQUE,
             username TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
@@ -1261,9 +1378,6 @@ def init_db():
     conn.close()
 
 init_db()
-
-def db_connect():
-    return sqlite3.connect(DB_PATH, timeout=15)
 
 def safe_text(s):
     return unicodedata.normalize('NFKD', str(s)).encode('latin-1', 'ignore').decode('latin-1')
