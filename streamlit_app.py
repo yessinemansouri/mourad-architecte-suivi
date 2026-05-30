@@ -1148,6 +1148,7 @@ DEFAULT_DB_HOST = "db.wmbxmxncqvxayzmxtywm.supabase.co"
 DEFAULT_DB_PORT = "5432"
 DEFAULT_DB_NAME = "postgres"
 DEFAULT_DB_USER = "postgres"
+LOTS_CATALOG_VERSION = "2026-05-31-lot-designation-xlsx"
 
 def get_config_value(name, default=""):
     try:
@@ -1441,6 +1442,50 @@ def token_overlap_score(source, target):
         return 0.0
     return len(source_tokens & target_tokens) / max(1, min(len(source_tokens), len(target_tokens)))
 
+def standardize_lots_dataframe(df):
+    if df is None or df.empty:
+        return pd.DataFrame(columns=["lots", "DESIGNATIONS"])
+
+    df = df.copy()
+    df.columns = [str(column).strip() for column in df.columns]
+    normalized_columns = {normalize_label(column): column for column in df.columns}
+
+    lot_column = None
+    for candidate in ["lot", "lots"]:
+        if candidate in normalized_columns:
+            lot_column = normalized_columns[candidate]
+            break
+
+    designation_column = None
+    for candidate in ["designation", "designations"]:
+        if candidate in normalized_columns:
+            designation_column = normalized_columns[candidate]
+            break
+
+    if designation_column is None and lot_column is not None:
+        other_columns = [column for column in df.columns if column != lot_column]
+        if other_columns:
+            designation_column = other_columns[0]
+
+    if lot_column is None or designation_column is None:
+        return pd.DataFrame(columns=["lots", "DESIGNATIONS"])
+
+    cleaned_df = df[[lot_column, designation_column]].rename(
+        columns={lot_column: "lots", designation_column: "DESIGNATIONS"}
+    )
+    cleaned_df = cleaned_df.dropna(how="all")
+    cleaned_df["lots"] = cleaned_df["lots"].astype(str).str.strip()
+    cleaned_df["DESIGNATIONS"] = cleaned_df["DESIGNATIONS"].astype(str).str.strip()
+    cleaned_df = cleaned_df[(cleaned_df["lots"] != "") & (cleaned_df["DESIGNATIONS"] != "")]
+    cleaned_df.drop_duplicates(subset=["lots", "DESIGNATIONS"], inplace=True)
+    return cleaned_df
+
+def load_base_lots_catalog():
+    file_path = os.path.join(APP_DIR, "lot designation.xlsx")
+    if not os.path.exists(file_path):
+        return pd.DataFrame(columns=["lots", "DESIGNATIONS"])
+    return standardize_lots_dataframe(pd.read_excel(file_path))
+
 def save_lot_designation(lot, designation):
     lot = str(lot or "").strip()
     designation = str(designation or "").strip()
@@ -1478,9 +1523,7 @@ def save_lot_designation(lot, designation):
 def load_custom_lots_file():
     file_path = os.path.join(APP_DIR, "lot_et_designation_par_lot.xlsx")
     if os.path.exists(file_path):
-        df = pd.read_excel(file_path)
-        df.columns = df.columns.str.strip()
-        return df
+        return standardize_lots_dataframe(pd.read_excel(file_path))
     return pd.DataFrame(columns=["lots", "DESIGNATIONS"])
 
 def persist_custom_lots_file(df):
@@ -2436,85 +2479,18 @@ def render_client_portal(conn):
     st.markdown("</div>", unsafe_allow_html=True)
 
 # Initialisation de l'état de la session
-if "lots_db" not in st.session_state:
-    # Charger les lots prédéfinis à partir du contenu du fichier fourni
-    predefined_data = [
-        {"lots": "Démolition", "DESIGNATIONS": "Mur double cloison et cloison de 10cm"},
-        {"lots": "Démolition", "DESIGNATIONS": "Démolition, tuyauteries; sanitaire et radiateurs"},
-        {"lots": "Terrasse", "DESIGNATIONS": "Terrasse au RDC chappe et pose granito blanc"},
-        {"lots": "Terrasse", "DESIGNATIONS": "suite a l'existant (20x40)"},
-        {"lots": "Béton extention + Plancher", "DESIGNATIONS": "Béton armé en élevation"},
-        {"lots": "Béton extention + Plancher", "DESIGNATIONS": "Plancher (16 + 5)"},
-        {"lots": "Maçonneries extention", "DESIGNATIONS": "Double cloison de 0,30"},
-        {"lots": "Maçonneries extention", "DESIGNATIONS": "Mur de 15 cm pour cloture"},
-        {"lots": "Maçonneries extention", "DESIGNATIONS": "Cloison de 10 cm en placo platre avec isolation"},
-        {"lots": "Enduits - Ravelements", "DESIGNATIONS": "Enduit intérieur"},
-        {"lots": "Enduits - Ravelements", "DESIGNATIONS": "Enduit extérieur"},
-        {"lots": "Enduits - Ravelements", "DESIGNATIONS": "Enduit sous plafond"},
-        {"lots": "Revêtements", "DESIGNATIONS": "F.Pose en carreaux effet marbre blanc 20x40 extention"},
-        {"lots": "Revêtements", "DESIGNATIONS": "F.Pose de carreaux en grès"},
-        {"lots": "Revêtements", "DESIGNATIONS": "F. Pose de revêtement muraux en faïence"},
-        {"lots": "Revêtements", "DESIGNATIONS": "F.Pose d'appuis de fenêtre"},
-        {"lots": "Revêtements", "DESIGNATIONS": "F.Pose de dalle en marbre pour plage lavabo"},
-        {"lots": "Ouvrages divers", "DESIGNATIONS": "F.Pose de pipette en PVC"},
-        {"lots": "Ouvrages divers", "DESIGNATIONS": "F.Pose plage lavabo en ceramique"},
-        {"lots": "Ouvrages divers", "DESIGNATIONS": "F.Pde Pissotieres avec boutton poussoire"},
-        {"lots": "Ouvrages divers", "DESIGNATIONS": "F. P de cuvette (Sanimed)"},
-        {"lots": "Ouvrages divers", "DESIGNATIONS": "F,P Robinet chaud et froid"},
-        {"lots": "Ouvrages divers", "DESIGNATIONS": "F.Pose flexible de toilette"},
-        {"lots": "Ouvrages divers", "DESIGNATIONS": "Réservation d'extracteur buée"},
-        {"lots": "Ouvrages divers", "DESIGNATIONS": "Souche de gaine technique"},
-        {"lots": "Forme de Pente + étanchéité", "DESIGNATIONS": "Forme de pente"},
-        {"lots": "Forme de Pente + étanchéité", "DESIGNATIONS": "Enduit de ravoirage"},
-        {"lots": "Forme de Pente + étanchéité", "DESIGNATIONS": "Etancheité sur terrasse"},
-        {"lots": "Forme de Pente + étanchéité", "DESIGNATIONS": "Relevé d'étancheité"},
-        {"lots": "Forme de Pente + étanchéité", "DESIGNATIONS": "Auto protection"},
-        {"lots": "Reseaux diver + Regards", "DESIGNATIONS": "F. transport et pose de canalisation"},
-        {"lots": "Reseaux diver + Regards", "DESIGNATIONS": "a) conduite en PVC O 100"},
-        {"lots": "Reseaux diver + Regards", "DESIGNATIONS": "b) conduite en PVC O 140"},
-        {"lots": "Reseaux diver + Regards", "DESIGNATIONS": "c) conduite en PVC O 150"},
-        {"lots": "Reseaux diver + Regards", "DESIGNATIONS": "Regards"},
-        {"lots": "Reseaux diver + Regards", "DESIGNATIONS": "a) regards 40 x 40"},
-        {"lots": "Reseaux diver + Regards", "DESIGNATIONS": "b) regards 60 x 60"},
-        {"lots": "Peintures", "DESIGNATIONS": "Peinture extérieure"},
-        {"lots": "Peintures", "DESIGNATIONS": "Peinture intérieure"},
-        {"lots": "Peintures", "DESIGNATIONS": "Peinture laquée"},
-        {"lots": "Peintures", "DESIGNATIONS": "Peinture sur boiseries"},
-        {"lots": "Peintures", "DESIGNATIONS": "Peinture sur ferronnerie"},
-        {"lots": "Divers", "DESIGNATIONS": "Menuiserie aluminium +boxe toilette Forfait"},
-        {"lots": "Divers", "DESIGNATIONS": "FP Electricite Forfait"},
-        {"lots": "Divers", "DESIGNATIONS": "FP tuyautterie pour chauffage central plomberie Forfait"},
-        {"lots": "Divers", "DESIGNATIONS": "Menuiserie entretient et quincaillerie Forfait"},
-        {"lots": "test mourad", "DESIGNATIONS": "t1"},
-        {"lots": "test mourad", "DESIGNATIONS": "t2"},
-        {"lots": "test mourad", "DESIGNATIONS": "t3"},
-        {"lots": "test mourad", "DESIGNATIONS": "t4"}
-    ]
-    df_predefined = pd.DataFrame(predefined_data)
-    
-    # Charger le fichier utilisateur s'il existe
-    uploaded_lot_file = "lot et designation par lot.xlsx"
-    if os.path.exists(uploaded_lot_file):
-        df_user = pd.read_excel(uploaded_lot_file)
-        df_user.columns = df_user.columns.str.strip()
-        df_user["lots"] = df_user["lots"].astype(str).str.strip()
-        df_user["DESIGNATIONS"] = df_user["DESIGNATIONS"].astype(str).str.strip()
-    else:
-        df_user = pd.DataFrame(columns=["lots", "DESIGNATIONS"])
+if st.session_state.get("lots_catalog_version") != LOTS_CATALOG_VERSION:
+    # Charger la nouvelle base principale depuis le fichier fourni.
+    df_predefined = load_base_lots_catalog()
 
-    # Charger les lots précédemment enregistrés s'ils existent
-    if os.path.exists("lot_et_designation_par_lot.xlsx"):
-        df_previous = pd.read_excel("lot_et_designation_par_lot.xlsx")
-        df_previous.columns = df_previous.columns.str.strip()
-        df_previous["lots"] = df_previous["lots"].astype(str).str.strip()
-        df_previous["DESIGNATIONS"] = df_previous["DESIGNATIONS"].astype(str).str.strip()
-    else:
-        df_previous = pd.DataFrame(columns=["lots", "DESIGNATIONS"])
+    # Charger les lots ajoutés depuis l'application, s'ils existent.
+    df_previous = load_custom_lots_file()
 
     # Combiner toutes les données
-    df_combined = pd.concat([df_predefined, df_user, df_previous], ignore_index=True)
+    df_combined = pd.concat([df_predefined, df_previous], ignore_index=True)
     df_combined.drop_duplicates(subset=["lots", "DESIGNATIONS"], inplace=True)
     st.session_state.lots_db = df_combined.copy()
+    st.session_state.lots_catalog_version = LOTS_CATALOG_VERSION
 
 if "devis_data" not in st.session_state:
     st.session_state.devis_data = []
