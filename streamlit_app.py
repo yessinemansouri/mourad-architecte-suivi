@@ -1149,28 +1149,28 @@ DEFAULT_DB_PORT = "5432"
 DEFAULT_DB_NAME = "postgres"
 DEFAULT_DB_USER = "postgres"
 
-def get_database_url():
+def get_config_value(name, default=""):
     try:
-        value = st.secrets.get("DATABASE_URL", "")
+        value = st.secrets.get(name, "")
     except Exception:
         value = ""
-    database_url = os.environ.get("DATABASE_URL", value).strip()
+    return os.environ.get(name, value).strip() or default
+
+def get_database_url():
+    database_url = get_config_value("DATABASE_URL")
     if database_url:
         return database_url
 
-    try:
-        db_password = st.secrets.get("DB_PASSWORD", "")
-    except Exception:
-        db_password = ""
-    db_password = os.environ.get("DB_PASSWORD", db_password).strip()
+    db_password = get_config_value("DB_PASSWORD")
     if not db_password:
         return ""
 
     return (
-        f"host={DEFAULT_DB_HOST} "
-        f"port={DEFAULT_DB_PORT} "
-        f"dbname={DEFAULT_DB_NAME} "
-        f"user={DEFAULT_DB_USER} "
+        f"host={get_config_value('DB_HOST', DEFAULT_DB_HOST)} "
+        f"port={get_config_value('DB_PORT', DEFAULT_DB_PORT)} "
+        f"dbname={get_config_value('DB_NAME', DEFAULT_DB_NAME)} "
+        f"user={get_config_value('DB_USER', DEFAULT_DB_USER)} "
+        "sslmode=require "
         f"password={db_password}"
     )
 
@@ -1249,7 +1249,16 @@ def db_connect():
         if psycopg2 is None:
             st.error("Le module psycopg2-binary est requis pour PostgreSQL. Ajoutez-le dans requirements.txt.")
             st.stop()
-        return PostgresConnection(psycopg2.connect(database_url))
+        try:
+            return PostgresConnection(psycopg2.connect(database_url))
+        except psycopg2.OperationalError:
+            st.error(
+                "Connexion PostgreSQL impossible. Vérifiez les secrets Streamlit "
+                "DATABASE_URL ou DB_PASSWORD. Sur Streamlit Cloud, si vous utilisez "
+                "Supabase, utilisez de préférence la connection string du pooler "
+                "Supabase, car la connexion directe peut nécessiter IPv6."
+            )
+            st.stop()
     return sqlite3.connect(DB_PATH, timeout=15)
 
 def column_exists(cursor, table_name, column_name):
