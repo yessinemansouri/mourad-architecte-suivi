@@ -1557,6 +1557,82 @@ def delete_lot_from_catalog(lot):
     st.session_state.lots_db = st.session_state.lots_db[st.session_state.lots_db["lots"].astype(str).str.strip() != lot].copy()
     return True, f"Lot « {lot} » supprimé de la liste active."
 
+def update_designation_name(old_lot, old_designation, new_lot, new_designation, conn=None):
+    old_lot = str(old_lot or "").strip()
+    old_designation = str(old_designation or "").strip()
+    new_lot = str(new_lot or "").strip()
+    new_designation = str(new_designation or "").strip()
+    if not old_lot or not old_designation or not new_lot or not new_designation:
+        return False, "Veuillez renseigner l'ancien lot, l'ancienne désignation et le nouveau libellé."
+
+    base_catalog_path = os.path.join(APP_DIR, "lot designation.xlsx")
+    if os.path.exists(base_catalog_path):
+        base_df = standardize_lots_dataframe(pd.read_excel(base_catalog_path))
+        base_mask = (
+            (base_df["lots"].astype(str).str.strip() == old_lot)
+            & (base_df["DESIGNATIONS"].astype(str).str.strip() == old_designation)
+        )
+        if base_mask.any():
+            base_df.loc[base_mask, "lots"] = new_lot
+            base_df.loc[base_mask, "DESIGNATIONS"] = new_designation
+            base_df.drop_duplicates(subset=["lots", "DESIGNATIONS"], inplace=True)
+            base_df.rename(columns={"lots": "Lot", "DESIGNATIONS": "Désignation"}).to_excel(base_catalog_path, index=False)
+
+    custom_df = load_custom_lots_file()
+    if custom_df.empty:
+        custom_df = pd.DataFrame(columns=["lots", "DESIGNATIONS"])
+
+    mask_old = (
+        (custom_df["lots"].astype(str).str.strip() == old_lot)
+        & (custom_df["DESIGNATIONS"].astype(str).str.strip() == old_designation)
+    )
+    custom_df = custom_df[~mask_old].copy()
+    custom_df = pd.concat(
+        [custom_df, pd.DataFrame([{"lots": new_lot, "DESIGNATIONS": new_designation}])],
+        ignore_index=True,
+    )
+    custom_df.drop_duplicates(subset=["lots", "DESIGNATIONS"], inplace=True)
+    persist_custom_lots_file(custom_df)
+
+    session_df = st.session_state.lots_db.copy()
+    session_mask = (
+        (session_df["lots"].astype(str).str.strip() == old_lot)
+        & (session_df["DESIGNATIONS"].astype(str).str.strip() == old_designation)
+    )
+    session_df.loc[session_mask, "lots"] = new_lot
+    session_df.loc[session_mask, "DESIGNATIONS"] = new_designation
+    if not (
+        (session_df["lots"].astype(str).str.strip() == new_lot)
+        & (session_df["DESIGNATIONS"].astype(str).str.strip() == new_designation)
+    ).any():
+        session_df = pd.concat(
+            [session_df, pd.DataFrame([{"lots": new_lot, "DESIGNATIONS": new_designation}])],
+            ignore_index=True,
+        )
+    session_df.drop_duplicates(subset=["lots", "DESIGNATIONS"], inplace=True)
+    st.session_state.lots_db = session_df.copy()
+
+    updated_rows = 0
+    if conn is not None:
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE project_details SET lot = ?, designation = ? WHERE lot = ? AND designation = ?",
+            (new_lot, new_designation, old_lot, old_designation),
+        )
+        detail_rowcount = getattr(cursor, "rowcount", getattr(getattr(cursor, "cursor", None), "rowcount", 0))
+        updated_rows += detail_rowcount if detail_rowcount is not None and detail_rowcount > 0 else 0
+        cursor.execute(
+            "UPDATE project_history SET lot = ?, designation = ? WHERE lot = ? AND designation = ?",
+            (new_lot, new_designation, old_lot, old_designation),
+        )
+        history_rowcount = getattr(cursor, "rowcount", getattr(getattr(cursor, "cursor", None), "rowcount", 0))
+        updated_rows += history_rowcount if history_rowcount is not None and history_rowcount > 0 else 0
+        conn.commit()
+
+    if updated_rows:
+        return True, f"Désignation modifiée et {updated_rows} ligne(s) de projet/historique mises à jour."
+    return True, "Désignation modifiée dans le catalogue actif."
+
 def delete_client_with_projects(conn, client_id):
     cursor = conn.cursor()
     try:
@@ -2315,6 +2391,66 @@ def draw_project_pdf_table(pdf, df, include_tracking=False, temp_assets=None):
         pdf.ln()
     return temp_assets
 
+def pdf_to_bytes(pdf, temp_assets=None):
+    output = BytesIO()
+    temp_pdf = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+    temp_pdf.close()
+    pdf.output(dest='F', name=temp_pdf.name)
+    with open(temp_pdf.name, 'rb') as f:
+        output.write(f.read())
+    output.seek(0)
+    os.remove(temp_pdf.name)
+    for asset_path in temp_assets or []:
+        if os.path.exists(asset_path):
+            os.remove(asset_path)
+    return output
+
+def generate_project_pdf_report(
+    df,
+    selected_client,
+    selected_project,
+    include_tracking=False,
+    title=None,
+    total_cout=None,
+    total_paiement=0.0,
+    current_advance=0.0,
+    besoin_financement=0.0,
+    taux_moyen=0.0,
+):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_fill_color(255, 255, 255)
+    if title is None:
+        title = "Etat d'avancement chantier" if include_tracking else "Devis initial"
+    add_pdf_header(pdf, title, selected_client, selected_project)
+    temp_assets = []
+    draw_project_pdf_table(pdf, df, include_tracking=include_tracking, temp_assets=temp_assets)
+    pdf.ln(8)
+    y = pdf.get_y()
+    total_cout = df["Coût Total"].sum() if total_cout is None and "Coût Total" in df.columns else (total_cout or 0.0)
+    pdf.set_fill_color(*BRAND_NAVY)
+    pdf.rect(10, y, 66, 24, "F")
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_font("Arial", 'B', 8)
+    pdf.text(15, y + 9, "TOTAL DEVIS TTC")
+    pdf.set_text_color(*BRAND_TEAL)
+    pdf.set_font("Arial", 'B', 17)
+    pdf.text(15, y + 19, safe_text(f"{total_cout:.2f} DT"))
+    if include_tracking:
+        pdf_kpi_card(pdf, 82, y, "Paiement engagé", f"{total_paiement:.2f} DT", BRAND_TEAL)
+        pdf_kpi_card(pdf, 144, y, "Avance perçue", f"{current_advance:.2f} DT", (242, 142, 43), width=56)
+        y2 = y + 26
+        if besoin_financement < 0:
+            pdf_kpi_card(pdf, 82, y2, "Besoin financement", f"{-besoin_financement:.2f} DT", (200, 72, 72))
+        else:
+            pdf_kpi_card(pdf, 82, y2, "Excédent financement", f"{besoin_financement:.2f} DT", (91, 68, 158))
+        pdf_kpi_card(pdf, 144, y2, "Taux moyen réalisation", f"{taux_moyen:.2f}%", (41, 137, 202), width=56)
+    else:
+        pdf_kpi_card(pdf, 82, y, "Statut", "Devis initial", BRAND_TEAL, width=58)
+        pdf_kpi_card(pdf, 144, y, "Avance", "Non saisie", (242, 142, 43), width=56)
+    pdf_footer(pdf)
+    return pdf_to_bytes(pdf, temp_assets)
+
 def render_logo(width=190):
     if os.path.exists(LOGO_PATH):
         st.image(LOGO_PATH, width=width)
@@ -2466,6 +2602,54 @@ def render_client_portal(conn):
     total_amort = df_client["Amortissement"].sum()
     global_rate = (total_amort / total_budget * 100) if total_budget else 0
     remaining_advance = current_advance - total_amort
+
+    st.markdown("<div class='card'><h2>Historique des avances</h2>", unsafe_allow_html=True)
+    c.execute(
+        "SELECT advance_amount, updated_at FROM project_advances WHERE project_id = ? ORDER BY updated_at ASC",
+        (project_id,),
+    )
+    advances = c.fetchall()
+    if advances:
+        advances_df = pd.DataFrame(advances, columns=["Montant Avance (DT)", "Date"])
+        advances_df["Date"] = advances_df["Date"].apply(format_date)
+        st.dataframe(advances_df, use_container_width=True, hide_index=True)
+    else:
+        st.info("Aucune avance n'est encore enregistrée pour ce projet.")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    pdf_col_devis, pdf_col_tracking = st.columns(2)
+    devis_pdf = generate_project_pdf_report(
+        df_client,
+        client["client_name"],
+        selected_project,
+        include_tracking=False,
+        title="Devis initial",
+        total_cout=total_budget,
+    )
+    pdf_col_devis.download_button(
+        "🖨️ Télécharger le devis initial PDF",
+        data=devis_pdf,
+        file_name=f"devis_initial_{client['client_name']}_{selected_project}.pdf",
+        mime="application/pdf",
+    )
+    tracking_pdf = generate_project_pdf_report(
+        df_client,
+        client["client_name"],
+        selected_project,
+        include_tracking=True,
+        title="Etat d'avancement chantier",
+        total_cout=total_budget,
+        total_paiement=total_amort,
+        current_advance=current_advance,
+        besoin_financement=remaining_advance,
+        taux_moyen=df_client["Avancement"].mean(),
+    )
+    pdf_col_tracking.download_button(
+        "📊 Télécharger l'état d'avancement PDF",
+        data=tracking_pdf,
+        file_name=f"etat_avancement_{client['client_name']}_{selected_project}.pdf",
+        mime="application/pdf",
+    )
 
     st.markdown("<div class='card'><h2>Devis global et suivi d'avancement</h2>", unsafe_allow_html=True)
     render_tracking_report_html(
@@ -2832,6 +3016,35 @@ with st.sidebar:
                 st.success(f"✅ {message}")
             else:
                 st.error(message)
+    with st.expander("✏️ Modifier une désignation"):
+        lots_for_edit = sorted(st.session_state.lots_db["lots"].dropna().astype(str).unique().tolist())
+        if lots_for_edit:
+            lot_to_edit = st.selectbox("Lot à corriger", options=lots_for_edit, key="edit_designation_lot")
+            designations_for_edit = sorted(
+                st.session_state.lots_db[
+                    st.session_state.lots_db["lots"].astype(str).str.strip() == lot_to_edit
+                ]["DESIGNATIONS"].dropna().astype(str).unique().tolist()
+            )
+            designation_to_edit = st.selectbox("Désignation à corriger", options=designations_for_edit, key="edit_designation_old")
+            with st.form("form_edit_designation"):
+                edited_lot = st.text_input("Lot", value=lot_to_edit)
+                edited_designation = st.text_input("Nouveau nom de la désignation", value=designation_to_edit)
+                edit_btn = st.form_submit_button("Modifier désignation")
+                if edit_btn:
+                    ok, message = update_designation_name(
+                        lot_to_edit,
+                        designation_to_edit,
+                        edited_lot,
+                        edited_designation,
+                        conn,
+                    )
+                    if ok:
+                        st.success(message)
+                        st.rerun()
+                    else:
+                        st.error(message)
+        else:
+            st.info("Aucune désignation disponible à modifier.")
     with st.expander("🗑️ Supprimer lot / désignation"):
         if "pending_delete_designation" not in st.session_state:
             st.session_state.pending_delete_designation = None
